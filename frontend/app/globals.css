@@ -322,6 +322,38 @@ mark.entity {
   color: var(--muted);
 }
 
+.gemma-badge {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.4rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #052e16;
+  background: var(--success);
+  border-radius: 999px;
+  vertical-align: middle;
+}
+
+.gemma-load-btn {
+  font-size: 0.8rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 4px;
+  border: 1px solid var(--accent, #6366f1);
+  background: transparent;
+  color: var(--accent, #6366f1);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.gemma-load-btn.secondary {
+  border-color: var(--muted);
+  color: var(--muted);
+}
+
+.gemma-load-btn:hover {
+  opacity: 0.85;
+}
+
 .error-banner {
   background: rgba(239, 68, 68, 0.15);
   border: 1px solid var(--danger);

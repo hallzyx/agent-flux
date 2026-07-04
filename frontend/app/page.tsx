@@ -19,7 +19,7 @@ import {
 import { GOLDEN_BRIEF, GOLDEN_ENTITIES } from "@/lib/fixtures/goldenBrief";
 import { createPseudonymizer, setPseudonymizer } from "@/lib/privacy/regexPseudonymizer";
 import { buildReidentifiedExport } from "@/lib/privacy/reidentifyExport";
-import { isGemmaPseudonymizer, tryEnableGemma } from "@/lib/privacy/gemmaPseudonymizer";
+import { GemmaPseudonymizer, isGemmaPseudonymizer, tryEnableGemma } from "@/lib/privacy/gemmaPseudonymizer";
 import type { MappingEntry } from "@/lib/privacy/types";
 import type { EscalationPayload, PrdDraft, TraceEvent } from "@/lib/trace/events";
 
@@ -48,6 +48,10 @@ export default function HomePage() {
   const [pseudonymizerName, setPseudonymizerName] = useState("regex-v1");
   const [gemmaProgress, setGemmaProgress] = useState<number | null>(null);
   const [enrichingMask, setEnrichingMask] = useState(false);
+  const [gemmaState, setGemmaState] = useState<"idle" | "loading" | "ready" | "unavailable" | "error">("idle");
+  const [gemmaSelfTest, setGemmaSelfTest] = useState("");
+  const gemmaRef = useRef<GemmaPseudonymizer | null>(null);
+  const gemmaFileInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<(() => void) | null>(null);
   const [networkSent, setNetworkSent] = useState(false);
 
@@ -59,14 +63,91 @@ export default function HomePage() {
       .then((r) => setPingResult(JSON.stringify(r, null, 2)))
       .catch((e) => setPingResult(String(e)));
 
-    void tryEnableGemma((pct) => setGemmaProgress(pct)).then((gemma) => {
-      if (gemma) {
-        setPseudonymizer(gemma);
-        setPseudonymizerName(gemma.name);
-        setPseudonymizerVersion((v) => v + 1);
-      }
-    });
+    setGemmaState("loading");
+    setGemmaProgress(0);
+    void tryEnableGemma((pct) => setGemmaProgress(pct))
+      .then(async ({ pseudonymizer: gemma, ready, webgpu }) => {
+        gemmaRef.current = gemma;
+        if (!webgpu) {
+          setGemmaState("unavailable");
+          setGemmaProgress(null);
+          return;
+        }
+        if (ready) {
+          await activateGemma(gemma);
+        } else {
+          setGemmaState("error");
+          setGemmaProgress(null);
+          setError("Gemma auto-load failed. Use “Load bundled model” or pick a .task file.");
+        }
+      })
+      .catch((err) => {
+        setGemmaState("error");
+        setGemmaProgress(null);
+        setError(`Gemma auto-load error: ${err instanceof Error ? err.message : String(err)}`);
+      });
   }, []);
+
+  const activateGemma = useCallback(async (gemma: GemmaPseudonymizer) => {
+    setPseudonymizer(gemma);
+    setPseudonymizerName(gemma.name);
+    setPseudonymizerVersion((v) => v + 1);
+    setGemmaState("ready");
+    setGemmaProgress(100);
+    try {
+      const reply = await gemma.selfTest();
+      if (reply) setGemmaSelfTest(reply);
+    } catch {
+      // self-test is best-effort proof only
+    }
+  }, []);
+
+  const handleGemmaModelFile = useCallback(
+    async (file: File) => {
+      const gemma = gemmaRef.current ?? new GemmaPseudonymizer();
+      gemmaRef.current = gemma;
+      setGemmaState("loading");
+      setGemmaProgress(0);
+      setError("");
+      try {
+        const ok = await gemma.initializeFromFile(file, (pct) => setGemmaProgress(pct));
+        if (ok) {
+          await activateGemma(gemma);
+        } else {
+          setGemmaState("error");
+          setGemmaProgress(null);
+          setError("Gemma failed to initialize from file. Check WebGPU support (Chrome/Edge).");
+        }
+      } catch (err) {
+        setGemmaState("error");
+        setGemmaProgress(null);
+        setError(`Gemma load error: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+    [activateGemma],
+  );
+
+  const handleLoadBundledGemma = useCallback(async () => {
+    const gemma = gemmaRef.current ?? new GemmaPseudonymizer();
+    gemmaRef.current = gemma;
+    setGemmaState("loading");
+    setGemmaProgress(0);
+    setError("");
+    try {
+      const ok = await gemma.initialize((pct) => setGemmaProgress(pct));
+      if (ok) {
+        await activateGemma(gemma);
+      } else {
+        setGemmaState("error");
+        setGemmaProgress(null);
+        setError("Bundled Gemma model failed to load. Ensure frontend/public/models/gemma3-270m-it-q4_0-web.task exists.");
+      }
+    } catch (err) {
+      setGemmaState("error");
+      setGemmaProgress(null);
+      setError(`Gemma load error: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }, [activateGemma]);
 
   const [pseudonymizerVersion, setPseudonymizerVersion] = useState(0);
   const [error, setError] = useState("");
@@ -234,9 +315,45 @@ export default function HomePage() {
         <h1>Agent Flux</h1>
         <p>Reference implementation — one full Flux Cycle from brief to PRD</p>
         <div className="status-bar">
-          <span>Pseudonymizer: <strong>{pseudonymizerName}</strong></span>
-          {gemmaProgress !== null && gemmaProgress < 100 && (
+          <span>
+            Pseudonymizer: <strong>{pseudonymizerName}</strong>
+            {gemmaState === "ready" && <span className="gemma-badge">on-device ✓</span>}
+          </span>
+          {gemmaState === "loading" && gemmaProgress !== null && (
             <span className="gemma-status">Loading Gemma… {gemmaProgress}%</span>
+          )}
+          {gemmaState === "ready" && gemmaSelfTest && (
+            <span className="gemma-status">Gemma inference OK — replied “{gemmaSelfTest}”</span>
+          )}
+          {mounted && gemmaState === "error" && (
+            <button type="button" className="gemma-load-btn" onClick={() => void handleLoadBundledGemma()}>
+              Load bundled model
+            </button>
+          )}
+          {mounted && (gemmaState === "error" || gemmaState === "idle") && (
+            <>
+              <button
+                type="button"
+                className="gemma-load-btn secondary"
+                onClick={() => gemmaFileInputRef.current?.click()}
+              >
+                Pick .task file…
+              </button>
+              <input
+                ref={gemmaFileInputRef}
+                type="file"
+                accept=".task,.bin,.litertlm"
+                hidden
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void handleGemmaModelFile(f);
+                  e.target.value = "";
+                }}
+              />
+            </>
+          )}
+          {mounted && gemmaState === "unavailable" && (
+            <span className="gemma-status">Gemma needs WebGPU (Chrome/Edge) — using regex</span>
           )}
           {mounted && (
             <>

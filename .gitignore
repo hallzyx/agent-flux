@@ -31,3 +31,7 @@ backend/app/demo_cache/*.json
 
 # Local hackathon docs (private)
 local/
+
+# Gemma on-device model weights (large, gated) — keep the folder README only
+frontend/public/models/*
+!frontend/public/models/README.md

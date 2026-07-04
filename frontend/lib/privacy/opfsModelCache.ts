@@ -34,6 +34,7 @@ export async function writeCachedModel(modelUrl: string, bytes: Uint8Array): Pro
 export async function fetchModelBytes(
   modelUrl: string,
   onProgress?: (pct: number) => void,
+  headers?: Record<string, string>,
 ): Promise<Uint8Array> {
   const cached = await readCachedModel(modelUrl);
   if (cached) {
@@ -41,7 +42,7 @@ export async function fetchModelBytes(
     return cached;
   }
 
-  const response = await fetch(modelUrl);
+  const response = await fetch(modelUrl, headers ? { headers } : undefined);
   if (!response.ok) {
     throw new Error(`Failed to download Gemma model (${response.status})`);
   }
