@@ -17,7 +17,12 @@ export function PlanApprovalCard({ steps, precedents, onApprove }: PlanApprovalC
 
   return (
     <div className="plan-approval-panel">
-      <h2>Approve execution plan</h2>
+      <div className="checkpoint-header">
+        <h2>Approve execution plan</h2>
+        <span className="checkpoint-time-cue" title="Typical supervisor review time">
+          ~15s
+        </span>
+      </div>
       <p className="hint">
         First supervision checkpoint — review what the Planner will execute before any retrieval or tool runs.
       </p>

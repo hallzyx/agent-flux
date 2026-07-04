@@ -13,6 +13,8 @@ export interface CompletionReport {
 
 interface CompletionReportPanelProps {
   report: CompletionReport;
+  /** When set, renders the unified contract-vs-delivery view (P1 #6). */
+  contractClauses?: string[];
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -21,24 +23,44 @@ const STATUS_LABEL: Record<string, string> = {
   partial: "Partial",
 };
 
-export function CompletionReportPanel({ report }: CompletionReportPanelProps) {
+function mergeContractWithReport(
+  contractClauses: string[],
+  report: CompletionReport,
+): CompletionClause[] {
+  const byClause = new Map(report.clauses.map((row) => [row.clause, row]));
+  return contractClauses.map(
+    (clause) =>
+      byClause.get(clause) ?? {
+        clause,
+        status: "partial" as const,
+        evidence: "Not yet evaluated against draft",
+      },
+  );
+}
+
+export function CompletionReportPanel({ report, contractClauses }: CompletionReportPanelProps) {
   const { summary } = report;
+  const merged = contractClauses && contractClauses.length > 0;
+  const rows = merged ? mergeContractWithReport(contractClauses, report) : report.clauses;
+
   return (
-    <div className="completion-report">
-      <h3>Completion report</h3>
+    <div className={`completion-report${merged ? " completion-report-merged" : ""}`}>
+      <h3>{merged ? "Contract vs delivery" : "Completion report"}</h3>
       <p className="hint">
-        Critic computed &quot;done&quot; clause-by-clause vs acceptance contract ({summary.met}/{summary.total} met).
+        {merged
+          ? `Acceptance contract checked against the PRD draft — ${summary.met}/${summary.total} clauses met.`
+          : `Critic computed "done" clause-by-clause vs acceptance contract (${summary.met}/${summary.total} met).`}
       </p>
       <table>
         <thead>
           <tr>
-            <th>Clause</th>
+            <th>Contract clause</th>
             <th>Status</th>
-            <th>Evidence</th>
+            <th>Evidence from draft</th>
           </tr>
         </thead>
         <tbody>
-          {report.clauses.map((row, i) => (
+          {rows.map((row, i) => (
             <tr key={i} className={`completion-row completion-${row.status}`}>
               <td>{row.clause}</td>
               <td>{STATUS_LABEL[row.status] ?? row.status}</td>
