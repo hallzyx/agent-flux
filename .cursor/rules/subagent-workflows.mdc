@@ -25,7 +25,7 @@ Structure, journey, show/hide per step, **P0/P1/P2 priority list** (max 8 items)
 
 ### Visual designer — `claude-opus-4-8-thinking-medium`
 
-Design system, typography, palette. Iteration 4 winner: **Ledger Light** (Fraunces + IBM Plex, parchment/navy/amber/teal).
+Design system, typography, palette. Iteration 4 winner: **Ledger Light** (Fraunces + IBM Plex, parchment/navy/amber/teal). On **P3**, compacts the living spec to `frontend/design.md` (tokens, recipes, anti-patterns).
 
 ### Coder — `composer-2.5-fast`
 
@@ -37,6 +37,8 @@ Design system, typography, palette. Iteration 4 winner: **Ledger Light** (Fraunc
 - P1 = Ledger Light visual system on top of P0
 - P1.5 = Alex `PASS WITH FIXES` from prior Px (not in original UX plan — name it explicitly)
 - P2 = polish from original plan (time cues, toasts, etc.)
+- **P3 = design system consistency** — optional post-P2 stage; **no IA/layout changes**. Unify tokens (radius, shadow, text scale), pills, alerts, heading/button discipline; kill "vibe coded" drift. Visual compacts spec to `frontend/design.md`. Split **P3a** (Alex-insisted, demo ROI) vs **P3b** (deferred: export placement, done consolidation, motion/a11y tokens).
+- **P3.5** = micro-fixes from Alex or user **during/after P3** (e.g. remove left accent bars) — same naming rule as P1.5; not mixed into P3b scope.
 - Match existing conventions; run `pnpm test` before handoff
 - **Does not** self-approve — always hands off to Alex
 
@@ -44,11 +46,14 @@ Design system, typography, palette. Iteration 4 winner: **Ledger Light** (Fraunc
 
 ## Phase A — Proposal (before coding)
 
-Run UX + Visual **in parallel** → parent synthesizes → **Alex reviews each P0/P1 item** (Approve / Modify / Reject + one sentence).
+Run UX + Visual **in parallel** → parent synthesizes → **Alex reviews** (Approve / Modify / Reject + one sentence).
 
-**Gate:** No coder until Alex **Almost → Go** (or user approves).
+- **P0–P2:** Alex reviews each priority item → **Almost → Go** before coder.
+- **P3 (optional):** Alex verdict **POLISH** (scoped P3a) vs **SHIP AS-IS** — no coder until user or Alex approves scope.
 
 If Alex **Modify/Reject** items → update brief → Alex re-reviews affected items only.
+
+**Gate:** No coder until Alex **Almost → Go** (P0–P2) or **POLISH** scope locked (P3).
 
 ---
 
@@ -68,7 +73,7 @@ Coder (Composer, Px only) → Alex + Playwright E2E → verdict → [fix loop] �
 
 | Verdict | Next step |
 |---------|-----------|
-| `PASS` or `GO` | Advance to **next Px** (P0 → P1 → P1.5 → P2) |
+| `PASS` or `GO` | Advance to **next Px** (P0 → P1 → P1.5 → P2 → **P3** → ship) |
 | `Almost` (proposal) | Lock brief, then start P0 coder |
 
 ### When Alex is **not** happy — fix loop
@@ -84,7 +89,11 @@ Coder (Composer, Px only) → Alex + Playwright E2E → verdict → [fix loop] �
 - P0: mapping table expanded → collapse by default → re-test boundary
 - P1: PRD dump too noisy, warn banner after Accept → collapsed PRD + post-Accept UI (labeled **P1.5**)
 
-**Naming:** fixes Alex requests **after** a Px validated but **before** the next planned Px = **P1.5**, **P2.5**, etc. — not mixed into the next priority.
+**Naming:** fixes Alex or user requests **after** a Px validated but **before** the next planned Px = **P1.5**, **P2.5**, **P3.5**, etc. — not mixed into the next priority.
+
+**Iteration 4 P3 examples:**
+- P3a: design tokens, unified pills/alerts, editorial headings (no step numbers), Escalation h2, Accept last in Validate; `frontend/design.md` written by Visual
+- P3.5: remove colored left accent bars on checkpoint panels (vibe-code tell); uniform panel borders per `design.md`
 
 ### Alex Playwright checklist (full E2E)
 
