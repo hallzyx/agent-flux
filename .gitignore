@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+frontend/.next/
+__pycache__/
+*.py[cod]
+.venv/
+backend/.venv/
+.env
+backend/.env
+frontend/.env.local
+
+# Build / cache
+dist/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Demo cache (optional local)
+backend/app/demo_cache/*.json
+
+# Local hackathon docs (private)
+local/
