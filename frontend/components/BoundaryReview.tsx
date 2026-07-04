@@ -27,7 +27,7 @@ export function BoundaryReview({ original, masked, mapping, leaks = [], onApprov
   return (
     <div className="boundary-review">
       <div className="checkpoint-header">
-        <h2>2. Review what leaves your device</h2>
+        <h2>Review what leaves your device</h2>
         <span className="checkpoint-time-cue" title="Typical supervisor review time">
           ~15s
         </span>

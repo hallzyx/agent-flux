@@ -101,9 +101,6 @@ export function ValidationPanel({
         <div className="verdict-buttons">
           {!completed && (
             <>
-              <button type="button" className="primary" onClick={onAccept}>
-                Accept
-              </button>
               <button
                 type="button"
                 className="secondary"
@@ -119,6 +116,9 @@ export function ValidationPanel({
                 onClick={() => onReject(rejectNote.trim())}
               >
                 Reject frame
+              </button>
+              <button type="button" className="primary" onClick={onAccept}>
+                Accept
               </button>
             </>
           )}
