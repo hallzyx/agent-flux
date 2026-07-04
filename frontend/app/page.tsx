@@ -4,11 +4,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { PlanApprovalCard } from "@/components/PlanApprovalCard";
 import { BoundaryReview } from "@/components/BoundaryReview";
-import { ContractPanel } from "@/components/ContractPanel";
+import { ContractChip, ContractPanel } from "@/components/ContractPanel";
 import { EscalationCard } from "@/components/Escalation";
+import { FluxStepper, type Step } from "@/components/FluxStepper";
 import { TracePanel } from "@/components/TracePanel";
 import { Upload } from "@/components/Upload";
 import { ValidationPanel } from "@/components/ValidationPanel";
+import { StepToast } from "@/components/StepToast";
 import {
   approvePlan,
   fetchContract,
@@ -18,14 +20,12 @@ import {
   streamCycle,
   submitVerdict,
 } from "@/lib/api/client";
-import { GOLDEN_BRIEF, GOLDEN_ENTITIES, DEMO_VERTICAL, DEMO_VERTICAL_TAGLINE } from "@/lib/fixtures/goldenBrief";
+import { GOLDEN_BRIEF, GOLDEN_ENTITIES, GOLDEN_GEMMA_ONLY_ENTITIES, DEMO_VERTICAL, DEMO_VERTICAL_TAGLINE } from "@/lib/fixtures/goldenBrief";
 import { createPseudonymizer, setPseudonymizer } from "@/lib/privacy/regexPseudonymizer";
 import { buildReidentifiedExport } from "@/lib/privacy/reidentifyExport";
 import { GemmaPseudonymizer, isGemmaPseudonymizer, tryEnableGemma } from "@/lib/privacy/gemmaPseudonymizer";
 import type { MappingEntry } from "@/lib/privacy/types";
 import type { EscalationPayload, PrdDraft, TraceEvent } from "@/lib/trace/events";
-
-type Step = "upload" | "boundary" | "running" | "plan_approval" | "escalation" | "validate" | "done";
 
 function uid() {
   return crypto.randomUUID();
@@ -61,14 +61,24 @@ export default function HomePage() {
   const gemmaFileInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<(() => void) | null>(null);
   const [networkSent, setNetworkSent] = useState(false);
+  const [debugMode, setDebugMode] = useState(false);
+  const [stepToast, setStepToast] = useState<string | null>(null);
+
+  const showStepToast = useCallback((message: string) => {
+    setStepToast(message);
+  }, []);
 
   useEffect(() => {
     setMounted(true);
     setSessionId(crypto.randomUUID());
+    const debug = new URLSearchParams(window.location.search).get("debug") === "1";
+    setDebugMode(debug);
     void fetchContract().then(setContract).catch(console.error);
-    void pingVultr()
-      .then((r) => setPingResult(JSON.stringify(r, null, 2)))
-      .catch((e) => setPingResult(String(e)));
+    if (debug) {
+      void pingVultr()
+        .then((r) => setPingResult(JSON.stringify(r, null, 2)))
+        .catch((e) => setPingResult(String(e)));
+    }
 
     setGemmaState("loading");
     setGemmaProgress(0);
@@ -183,8 +193,9 @@ export default function HomePage() {
 
       setMaskedText(result.maskedText);
       setMapping(result.mapping);
+      showStepToast("Brief loaded → review privacy boundary");
     },
-    [pseudonymizer],
+    [pseudonymizer, showStepToast],
   );
 
   const handleEvent = useCallback((ev: TraceEvent) => {
@@ -198,6 +209,7 @@ export default function HomePage() {
       });
       setStep("escalation");
       setRunning(false);
+      setStepToast("Decision required — review escalation");
     }
 
     if (ev.type === "plan" && ev.data.pending_approval && ev.data.resume_token) {
@@ -213,6 +225,7 @@ export default function HomePage() {
       });
       setStep("plan_approval");
       setRunning(false);
+      setStepToast("Plan ready — review before execute");
     }
 
     if (ev.type === "precedent_applied") {
@@ -223,6 +236,7 @@ export default function HomePage() {
       setPrd(ev.data.prd as PrdDraft);
       setStep("validate");
       setRunning(false);
+      setStepToast("PRD ready — validate against contract");
     }
   }, []);
 
@@ -230,6 +244,28 @@ export default function HomePage() {
     if (!prd) return "";
     return buildReidentifiedExport(prd, pseudonymizer, mapping)?.markdown ?? "";
   }, [prd, pseudonymizer, mapping]);
+
+  const escalationReached = useMemo(
+    () => step === "escalation" || events.some((ev) => ev.type === "escalation"),
+    [step, events],
+  );
+
+  const traceMode: "rail" | "expanded" | "hidden" = useMemo(() => {
+    if (step === "upload") return "hidden";
+    if (step === "running" || step === "done") return "expanded";
+    return "rail";
+  }, [step]);
+
+  const privacyLabel = useMemo(() => {
+    if (gemmaState === "loading") return "Privacy: loading…";
+    if (gemmaState === "ready") return "Privacy: on-device ✓";
+    return "Privacy: regex fallback";
+  }, [gemmaState]);
+
+  const boundaryLeaks = useMemo(
+    () => grepEntities(maskedText, [...GOLDEN_ENTITIES, ...GOLDEN_GEMMA_ONLY_ENTITIES]),
+    [maskedText],
+  );
 
   const startCycle = useCallback((options?: { keepTrace?: boolean; keepPrecedent?: boolean; supervisorNote?: string }) => {
     if (!options?.keepTrace) setEvents([]);
@@ -263,6 +299,7 @@ export default function HomePage() {
 
   const handleApproveBoundary = () => {
     setNetworkSent(true);
+    showStepToast("Boundary approved → starting Flux Cycle");
     startCycle();
   };
 
@@ -271,6 +308,7 @@ export default function HomePage() {
     setRunning(true);
     setStep("running");
     setPlanApproval(null);
+    showStepToast("Plan approved → executing");
     abortRef.current = approvePlan(
       { session_id: sessionId, resume_token: planApproval.token, approved_steps: steps },
       handleEvent,
@@ -287,6 +325,7 @@ export default function HomePage() {
     setRunning(true);
     setStep("running");
     setPrecedentRecorded(true);
+    showStepToast("Escalation resolved → continuing");
     abortRef.current = resumeCycle(
       { session_id: sessionId, resume_token: escalation!.token, selected_option_id: optionId },
       handleEvent,
@@ -317,6 +356,7 @@ export default function HomePage() {
       },
     ]);
     setStep("done");
+    showStepToast("Accepted → Flux Cycle complete");
   };
 
   const handleRedirect = async (note: string) => {
@@ -387,59 +427,74 @@ export default function HomePage() {
         </p>
         <p className="header-sub">Reference implementation — one supervised Flux Cycle from RFP to delivery spec</p>
         <div className="status-bar">
-          <span>
-            Pseudonymizer: <strong>{pseudonymizerName}</strong>
-            {gemmaState === "ready" && <span className="gemma-badge">on-device ✓</span>}
+          <span className="status-pill hitl-chip">Human-in-the-loop: ON</span>
+          <span className={`status-pill privacy-pill ${gemmaState === "ready" ? "ok" : ""}`}>
+            {privacyLabel}
           </span>
-          {gemmaState === "loading" && gemmaProgress !== null && (
-            <span className="gemma-status">Loading Gemma… {gemmaProgress}%</span>
-          )}
-          {gemmaState === "ready" && gemmaSelfTest && (
-            <span className="gemma-status">Gemma inference OK — replied “{gemmaSelfTest}”</span>
-          )}
-          {mounted && gemmaState === "error" && (
-            <button type="button" className="gemma-load-btn" onClick={() => void handleLoadBundledGemma()}>
-              Load bundled model
-            </button>
-          )}
-          {mounted && (gemmaState === "error" || gemmaState === "idle") && (
-            <>
-              <button
-                type="button"
-                className="gemma-load-btn secondary"
-                onClick={() => gemmaFileInputRef.current?.click()}
-              >
-                Pick .task file…
-              </button>
-              <input
-                ref={gemmaFileInputRef}
-                type="file"
-                accept=".task,.bin,.litertlm"
-                hidden
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) void handleGemmaModelFile(f);
-                  e.target.value = "";
-                }}
-              />
-            </>
-          )}
-          {mounted && gemmaState === "unavailable" && (
-            <span className="gemma-status">Gemma needs WebGPU (Chrome/Edge) — using regex</span>
-          )}
           {mounted && (
-            <>
-              <span>Network sent: {networkSent ? "yes (approved)" : "no"}</span>
-              <span>Session: {sessionId.slice(0, 8)}…</span>
-            </>
+            <span className={`status-pill outbound-pill ${networkSent ? "ok" : ""}`}>
+              Outbound: {networkSent ? "masked text approved" : "not sent"}
+            </span>
           )}
         </div>
+        <details className="tech-details">
+          <summary>Technical details</summary>
+          <div className="tech-details-body">
+            <span>
+              Pseudonymizer: <strong>{pseudonymizerName}</strong>
+            </span>
+            {gemmaState === "loading" && gemmaProgress !== null && (
+              <span className="gemma-status">Loading Gemma… {gemmaProgress}%</span>
+            )}
+            {gemmaState === "ready" && gemmaSelfTest && (
+              <span className="gemma-status">Gemma inference OK — replied “{gemmaSelfTest}”</span>
+            )}
+            {mounted && gemmaState === "error" && (
+              <button type="button" className="gemma-load-btn" onClick={() => void handleLoadBundledGemma()}>
+                Load bundled model
+              </button>
+            )}
+            {mounted && (gemmaState === "error" || gemmaState === "idle") && (
+              <>
+                <button
+                  type="button"
+                  className="gemma-load-btn secondary"
+                  onClick={() => gemmaFileInputRef.current?.click()}
+                >
+                  Pick .task file…
+                </button>
+                <input
+                  ref={gemmaFileInputRef}
+                  type="file"
+                  accept=".task,.bin,.litertlm"
+                  hidden
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) void handleGemmaModelFile(f);
+                    e.target.value = "";
+                  }}
+                />
+              </>
+            )}
+            {mounted && gemmaState === "unavailable" && (
+              <span className="gemma-status">Gemma needs WebGPU (Chrome/Edge) — using regex</span>
+            )}
+          </div>
+        </details>
       </header>
 
-      <div className="layout">
+      <FluxStepper currentStep={step} escalationReached={escalationReached} />
+
+      <div className={`layout${traceMode === "rail" ? " layout-trace-rail" : ""}`}>
         <div className="main-flow">
           <ErrorBanner message={error} onDismiss={() => setError("")} />
-          {contract.length > 0 && <ContractPanel clauses={contract} />}
+          {contract.length > 0 && step === "upload" && (
+            <ContractPanel clauses={contract} />
+          )}
+          {contract.length > 0 &&
+            step !== "upload" &&
+            step !== "validate" &&
+            step !== "done" && <ContractChip clauses={contract} />}
 
           {step === "upload" && (
             <Upload
@@ -451,12 +506,13 @@ export default function HomePage() {
           {step === "boundary" && (
             <>
               {enrichingMask && (
-                <p className="gemma-status">Gemma extracting PII on-device (primary NER)…</p>
+                <p className="gemma-status">Checking privacy locally…</p>
               )}
               <BoundaryReview
                 original={originalText}
                 masked={maskedText}
                 mapping={mapping}
+                leaks={boundaryLeaks}
                 onApprove={handleApproveBoundary}
                 onCancel={() => setStep("upload")}
               />
@@ -492,6 +548,8 @@ export default function HomePage() {
           {(step === "validate" || step === "done") && prd && (
             <ValidationPanel
               prd={prd}
+              contractClauses={contract}
+              completed={step === "done"}
               reidentifiedMarkdown={reidentifiedMd || reidentifiedPreview || undefined}
               onAccept={handleAccept}
               onRedirect={handleRedirect}
@@ -510,14 +568,20 @@ export default function HomePage() {
             </div>
           )}
 
-          <div className="ping-panel">
-            <h3>Vultr connectivity (M0 gate)</h3>
-            <pre>{pingResult || "Checking…"}</pre>
-          </div>
+          {debugMode && (
+            <div className="ping-panel">
+              <h3>Vultr connectivity (M0 gate)</h3>
+              <pre>{pingResult || "Checking…"}</pre>
+            </div>
+          )}
         </div>
 
-        <TracePanel events={events} running={running} />
+        {traceMode !== "hidden" && (
+          <TracePanel events={events} running={running} mode={traceMode} />
+        )}
       </div>
+
+      <StepToast message={stepToast} onDismiss={() => setStepToast(null)} />
     </div>
   );
 }
