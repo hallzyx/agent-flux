@@ -18,11 +18,24 @@ const TYPE_LABELS: Record<string, string> = {
 interface TracePanelProps {
   events: TraceEvent[];
   running: boolean;
+  mode?: "rail" | "expanded";
 }
 
-export function TracePanel({ events, running }: TracePanelProps) {
+export function TracePanel({ events, running, mode = "expanded" }: TracePanelProps) {
+  if (mode === "rail") {
+    return (
+      <aside className="trace-panel trace-panel-rail" aria-label="Flux Cycle trace">
+        <span className="trace-rail-label">Trace</span>
+        <span className="trace-rail-badge" aria-label={`${events.length} events`}>
+          {events.length}
+        </span>
+        {running && <span className="trace-rail-live" aria-hidden title="Live" />}
+      </aside>
+    );
+  }
+
   return (
-    <div className="trace-panel">
+    <div className="trace-panel trace-panel-expanded">
       <h2>Flux Cycle Trace</h2>
       {running && <p className="trace-live">● Live</p>}
       <div className="trace-list">
