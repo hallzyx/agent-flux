@@ -1,0 +1,6 @@
+{
+  "issues": [
+    {"type": "Epic", "summary": "Phase 2 — Licensing Module", "key": "EPIC-02"},
+    {"type": "Story", "summary": "License key generation", "parent": "EPIC-02", "labels": ["M"]}
+  ]
+}

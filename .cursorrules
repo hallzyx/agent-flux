@@ -1,0 +1,28 @@
+# Agent Flux — Cursor rules
+
+## Monorepo
+- `frontend/` — Next.js 15 (App Router). Client-side privacy, boundary review, trace UI.
+- `backend/` — FastAPI Flux Cycle orchestrator (SSE). Never receives raw PII.
+- `framework-docs/` — public methodology canon. Do not rewrite unless asked.
+- `local/` — private hackathon docs (gitignored). Do not commit or edit unless asked.
+
+## Privacy boundary (non-negotiable)
+- Raw client text, PDF extraction, pseudonymization, and re-identification happen **only in the browser**.
+- Backend receives **masked text** after human approval at boundary review.
+- PRD exports re-identify locally via the mapping table; server-side output keeps placeholders.
+
+## Gemma on-device
+- Gemma 3 runs in the browser via MediaPipe + WebGPU (`frontend/lib/privacy/`).
+- Default model path: `frontend/public/models/gemma3-270m-it-q4_0-web.task` (gitignored weights).
+- Regex is the baseline; Gemma enriches NER when loaded. Fall back to regex on failure.
+- Do not move pseudonymization to the backend or cloud APIs.
+
+## Flux Cycle
+- Backend pipeline: Plan → Retrieve → Tools → Escalation/Precedent → Critic → PRD (SSE trace).
+- Escalation pauses the cycle; precedent skips repeat escalations in-session.
+- Deterministic tools must remain testable without Vultr.
+
+## Conventions
+- Conventional Commits. Small, reviewable commits by work unit.
+- Match existing patterns; minimal diffs. Tests with behavior changes.
+- Run: `frontend` → `pnpm test`; `backend` → `uv run pytest`.
