@@ -17,10 +17,10 @@ describe("buildReidentifiedExport", () => {
       },
     };
     const out = buildReidentifiedExport(prd, pseudonymizer, mapping);
-    expect(out?.markdown).toContain("Acme Corp");
+    expect(out?.markdown).toContain("Meridian Capital");
     expect(out?.markdown).not.toContain("[CLIENT_1]");
     const issue = (out?.jira as { issues: Array<{ summary: string }> }).issues[0];
-    expect(issue.summary).toContain("Acme Corp");
+    expect(issue.summary).toContain("Meridian Capital");
   });
 
   it("handles masked markdown from pipeline shape", () => {

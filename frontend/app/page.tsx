@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ErrorBanner } from "@/components/ErrorBanner";
+import { PlanApprovalCard } from "@/components/PlanApprovalCard";
 import { BoundaryReview } from "@/components/BoundaryReview";
 import { ContractPanel } from "@/components/ContractPanel";
 import { EscalationCard } from "@/components/Escalation";
@@ -9,6 +10,7 @@ import { TracePanel } from "@/components/TracePanel";
 import { Upload } from "@/components/Upload";
 import { ValidationPanel } from "@/components/ValidationPanel";
 import {
+  approvePlan,
   fetchContract,
   grepEntities,
   pingVultr,
@@ -16,14 +18,14 @@ import {
   streamCycle,
   submitVerdict,
 } from "@/lib/api/client";
-import { GOLDEN_BRIEF, GOLDEN_ENTITIES } from "@/lib/fixtures/goldenBrief";
+import { GOLDEN_BRIEF, GOLDEN_ENTITIES, DEMO_VERTICAL, DEMO_VERTICAL_TAGLINE } from "@/lib/fixtures/goldenBrief";
 import { createPseudonymizer, setPseudonymizer } from "@/lib/privacy/regexPseudonymizer";
 import { buildReidentifiedExport } from "@/lib/privacy/reidentifyExport";
 import { GemmaPseudonymizer, isGemmaPseudonymizer, tryEnableGemma } from "@/lib/privacy/gemmaPseudonymizer";
 import type { MappingEntry } from "@/lib/privacy/types";
 import type { EscalationPayload, PrdDraft, TraceEvent } from "@/lib/trace/events";
 
-type Step = "upload" | "boundary" | "running" | "escalation" | "validate" | "done";
+type Step = "upload" | "boundary" | "running" | "plan_approval" | "escalation" | "validate" | "done";
 
 function uid() {
   return crypto.randomUUID();
@@ -40,6 +42,11 @@ export default function HomePage() {
   const [events, setEvents] = useState<TraceEvent[]>([]);
   const [running, setRunning] = useState(false);
   const [escalation, setEscalation] = useState<{ payload: EscalationPayload; token: string } | null>(null);
+  const [planApproval, setPlanApproval] = useState<{
+    steps: string[];
+    token: string;
+    precedents?: Array<{ blocked_decision: string; ruling: string }>;
+  } | null>(null);
   const [prd, setPrd] = useState<PrdDraft | null>(null);
   const [cycleId, setCycleId] = useState("");
   const [precedentRecorded, setPrecedentRecorded] = useState(false);
@@ -156,24 +163,26 @@ export default function HomePage() {
   const handleTextExtracted = useCallback(
     async (text: string) => {
       setOriginalText(text);
-      let result = pseudonymizer.pseudonymize(text);
-      setMaskedText(result.maskedText);
-      setMapping(result.mapping);
       setStep("boundary");
       setNetworkSent(false);
 
+      let result;
       if (isGemmaPseudonymizer(pseudonymizer) && pseudonymizer.isReady()) {
         setEnrichingMask(true);
         try {
-          result = await pseudonymizer.enrichWithGemma(text, result);
-          setMaskedText(result.maskedText);
-          setMapping(result.mapping);
+          result = await pseudonymizer.pseudonymizeOnDevice(text);
         } catch (err) {
-          console.warn("Gemma enrichment skipped", err);
+          console.warn("Gemma on-device NER failed; regex fallback", err);
+          result = pseudonymizer.pseudonymize(text);
         } finally {
           setEnrichingMask(false);
         }
+      } else {
+        result = pseudonymizer.pseudonymize(text);
       }
+
+      setMaskedText(result.maskedText);
+      setMapping(result.mapping);
     },
     [pseudonymizer],
   );
@@ -188,6 +197,21 @@ export default function HomePage() {
         token: String(ev.data.resume_token),
       });
       setStep("escalation");
+      setRunning(false);
+    }
+
+    if (ev.type === "plan" && ev.data.pending_approval && ev.data.resume_token) {
+      const steps = Array.isArray(ev.data.steps) ? (ev.data.steps as string[]) : [];
+      const rawPrecedents = ev.data.precedents_in_plan as Array<{ blocked_decision: string; ruling?: string; label?: string }> | undefined;
+      setPlanApproval({
+        steps,
+        token: String(ev.data.resume_token),
+        precedents: rawPrecedents?.map((p) => ({
+          blocked_decision: p.blocked_decision,
+          ruling: p.ruling ?? p.label ?? "",
+        })),
+      });
+      setStep("plan_approval");
       setRunning(false);
     }
 
@@ -212,6 +236,7 @@ export default function HomePage() {
     setRunning(true);
     setStep("running");
     setEscalation(null);
+    setPlanApproval(null);
     setPrd(null);
     if (!options?.keepPrecedent) setPrecedentRecorded(false);
 
@@ -239,6 +264,23 @@ export default function HomePage() {
   const handleApproveBoundary = () => {
     setNetworkSent(true);
     startCycle();
+  };
+
+  const handleApprovePlan = (steps: string[]) => {
+    if (!planApproval) return;
+    setRunning(true);
+    setStep("running");
+    setPlanApproval(null);
+    abortRef.current = approvePlan(
+      { session_id: sessionId, resume_token: planApproval.token, approved_steps: steps },
+      handleEvent,
+      () => setRunning(false),
+      (err) => {
+        console.error(err);
+        setError(String(err));
+        setRunning(false);
+      },
+    );
   };
 
   const handleEscalationResolve = (optionId: string) => {
@@ -292,6 +334,28 @@ export default function HomePage() {
     startCycle({ keepTrace: true, keepPrecedent: true, supervisorNote: note });
   };
 
+  const handleReject = async (note: string) => {
+    await submitVerdict({ session_id: sessionId, cycle_id: cycleId, verdict: "reject", note });
+    setEvents((prev) => [
+      ...prev,
+      {
+        id: uid(),
+        type: "verdict",
+        timestamp: new Date().toISOString(),
+        cycle_id: cycleId,
+        message: "Human verdict: reject — re-frame delegation",
+        data: { verdict: "reject", note },
+      },
+    ]);
+    abortRef.current?.();
+    setPrd(null);
+    setReidentifiedMd("");
+    setEscalation(null);
+    setPlanApproval(null);
+    setRunning(false);
+    setStep("upload");
+  };
+
   const handleExport = () => {
     if (!prd) return;
     const exported = buildReidentifiedExport(prd, pseudonymizer, mapping);
@@ -317,7 +381,11 @@ export default function HomePage() {
     <div className="app">
       <header>
         <h1>Agent Flux</h1>
-        <p>Reference implementation — one full Flux Cycle from brief to PRD</p>
+        <p className="vertical-tagline">
+          <span className="vertical-badge">{DEMO_VERTICAL}</span>
+          {DEMO_VERTICAL_TAGLINE}
+        </p>
+        <p className="header-sub">Reference implementation — one supervised Flux Cycle from RFP to delivery spec</p>
         <div className="status-bar">
           <span>
             Pseudonymizer: <strong>{pseudonymizerName}</strong>
@@ -383,7 +451,7 @@ export default function HomePage() {
           {step === "boundary" && (
             <>
               {enrichingMask && (
-                <p className="gemma-status">Enriching mask with Gemma on-device…</p>
+                <p className="gemma-status">Gemma extracting PII on-device (primary NER)…</p>
               )}
               <BoundaryReview
                 original={originalText}
@@ -395,13 +463,21 @@ export default function HomePage() {
             </>
           )}
 
-          {(step === "running" || step === "escalation" || step === "validate" || step === "done") && (
+          {(step === "running" || step === "plan_approval" || step === "escalation" || step === "validate" || step === "done") && (
             <div className="running-status">
               <p>Flux Cycle {running ? "in progress…" : step === "done" ? "complete ✓" : "paused / ready"}</p>
               {precedentRecorded && (
                 <span className="precedent-chip">Recorded as precedent — this question won&apos;t be asked again</span>
               )}
             </div>
+          )}
+
+          {step === "plan_approval" && planApproval && (
+            <PlanApprovalCard
+              steps={planApproval.steps}
+              precedents={planApproval.precedents}
+              onApprove={handleApprovePlan}
+            />
           )}
 
           {step === "escalation" && escalation && (
@@ -419,6 +495,7 @@ export default function HomePage() {
               reidentifiedMarkdown={reidentifiedMd || reidentifiedPreview || undefined}
               onAccept={handleAccept}
               onRedirect={handleRedirect}
+              onReject={handleReject}
               onExport={handleExport}
             />
           )}

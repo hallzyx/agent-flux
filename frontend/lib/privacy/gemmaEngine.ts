@@ -86,20 +86,48 @@ function formatGemma3Prompt(instruction: string): string {
   return `<start_of_turn>user\n${instruction}\n<end_of_turn>\n<start_of_turn>model\n`;
 }
 
-const ENTITY_PROMPT = `You are a privacy assistant. Extract ALL personally identifiable information from the document below.
-Return ONLY a valid JSON array. Each item must have "text" (exact substring from the document) and "type" (one of: CLIENT, PERSON, EMAIL, BUDGET, DEADLINE, NDA, PHONE).
-Do not include markdown fences or commentary.
+/** Gemma 3 270M web task: maxTokens=512 (input + output). Keep each prompt well under that. */
+const GEMMA_MAX_SNIPPET_CHARS = 900;
+const GEMMA_MAX_CHUNKS = 3;
+
+const ENTITY_PROMPT = `Extract PII from the document. Return ONLY a JSON array of {"text":"...","type":"..."} with type in CLIENT|PERSON|EMAIL|BUDGET|DEADLINE|NDA|PHONE.
 
 Document:
 `;
 
+/** Split long briefs into head/tail chunks so each LLM call stays within the 512-token window. */
+export function gemmaDocumentChunks(text: string): string[] {
+  if (text.length <= GEMMA_MAX_SNIPPET_CHARS) return [text];
+  const chunks: string[] = [];
+  for (let i = 0; i < text.length && chunks.length < GEMMA_MAX_CHUNKS; i += GEMMA_MAX_SNIPPET_CHARS) {
+    chunks.push(text.slice(i, i + GEMMA_MAX_SNIPPET_CHARS));
+  }
+  return chunks;
+}
+
 export async function extractEntitiesWithGemma(text: string): Promise<Array<{ text: string; type: string }>> {
   if (!llmInstance) return [];
 
-  const snippet = text.length > 3500 ? text.slice(0, 3500) : text;
-  const query = formatGemma3Prompt(`${ENTITY_PROMPT}${snippet}`);
-  const raw = await llmInstance.generateResponse(query);
-  return parseEntityJson(raw);
+  const seen = new Set<string>();
+  const merged: Array<{ text: string; type: string }> = [];
+
+  for (const snippet of gemmaDocumentChunks(text)) {
+    try {
+      const query = formatGemma3Prompt(`${ENTITY_PROMPT}${snippet}`);
+      const raw = await llmInstance.generateResponse(query);
+      for (const ent of parseEntityJson(raw)) {
+        const key = `${ent.type}:${ent.text.toLowerCase()}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          merged.push(ent);
+        }
+      }
+    } catch (err) {
+      console.warn("Gemma chunk extraction failed; regex mask remains authoritative", err);
+    }
+  }
+
+  return merged;
 }
 
 /** Runs a tiny prompt so the UI can prove Gemma is doing real on-device inference. */

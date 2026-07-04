@@ -1,3 +1,3 @@
 The licensing module is business-critical. The payment model is ambiguous — it could mean either a one-time license fee OR a recurring subscription model.
-Phase 2 — Licensing Module (Q3 2026)
+Phase 2 — Licensing & Fee Module (Q3 2026)
 Must implement SSO integration with Okta.

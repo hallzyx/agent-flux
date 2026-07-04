@@ -8,11 +8,12 @@ import {
   isGemmaEngineReady,
   webGpuAvailable,
 } from "./gemmaEngine";
-import { RegexPseudonymizer } from "./regexPseudonymizer";
+import { applyStructuredPatterns, RegexPseudonymizer } from "./regexPseudonymizer";
 
 /**
  * Gemma on-device pseudonymizer (M10).
- * Regex baseline always runs; Gemma 3 (MediaPipe + WebGPU) adds supplemental NER when loaded.
+ * When loaded: Gemma leads NER on the full brief; regex applies structured patterns as safety net.
+ * When unavailable: falls back to full regex pseudonymization.
  */
 export class GemmaPseudonymizer implements PseudonymizerPort {
   readonly name = "gemma-3-on-device";
@@ -45,40 +46,45 @@ export class GemmaPseudonymizer implements PseudonymizerPort {
     }
   }
 
+  /** Sync path — regex only (used when Gemma is not ready yet). */
   pseudonymize(text: string): PseudonymizeResult {
     return this.fallback.pseudonymize(text);
   }
 
-  async enrichWithGemma(text: string, base: PseudonymizeResult): Promise<PseudonymizeResult> {
-    if (!this.ready || !isGemmaEngineReady()) return base;
-
-    const mapping = base.mapping.map((entry) => ({ ...entry }));
-    const counters: Record<string, number> = {};
-    for (const entry of mapping) {
-      const match = entry.placeholder.match(/\[([A-Z]+)_(\d+)/);
-      if (!match) continue;
-      const type = match[1];
-      const id = Number(match[2]);
-      counters[type] = Math.max(counters[type] || 0, id);
+  /**
+   * Primary on-device path when Gemma is loaded: LLM NER first, then structured regex safety net.
+   */
+  async pseudonymizeOnDevice(text: string): Promise<PseudonymizeResult> {
+    if (!this.ready || !isGemmaEngineReady()) {
+      return this.fallback.pseudonymize(text);
     }
+
+    const mapping: PseudonymizeResult["mapping"] = [];
+    const counters: Record<string, number> = {};
 
     try {
       const entities = await extractEntitiesWithGemma(text);
-      const maskedText = applyDetectedEntities(base.maskedText, mapping, counters, entities);
-      return { maskedText, mapping };
+      if (entities.length === 0) {
+        console.warn("Gemma returned no entities; falling back to regex");
+        return this.fallback.pseudonymize(text);
+      }
+
+      let masked = applyDetectedEntities(text, mapping, counters, entities);
+      masked = applyStructuredPatterns(masked, mapping, counters);
+      return { maskedText: masked, mapping };
     } catch (err) {
-      console.warn("Gemma entity extraction failed; keeping regex-only mask", err);
-      return base;
+      console.warn("Gemma NER failed; falling back to regex", err);
+      return this.fallback.pseudonymize(text);
     }
+  }
+
+  reidentify(text: string, mapping: ReturnType<RegexPseudonymizer["pseudonymize"]>["mapping"]) {
+    return this.fallback.reidentify(text, mapping);
   }
 
   async selfTest(): Promise<string> {
     if (!this.ready) return "";
     return gemmaSelfTest();
-  }
-
-  reidentify(text: string, mapping: ReturnType<RegexPseudonymizer["pseudonymize"]>["mapping"]) {
-    return this.fallback.reidentify(text, mapping);
   }
 
   isReady() {
@@ -92,11 +98,6 @@ export function isGemmaPseudonymizer(
   return impl instanceof GemmaPseudonymizer;
 }
 
-/**
- * Attempts auto-load from the configured model URL. When it fails (e.g. gated
- * HuggingFace repo returns 401, or no local model is served), returns an
- * unready instance so the UI can offer manual file loading instead of hanging.
- */
 export async function tryEnableGemma(onProgress?: (pct: number) => void): Promise<{
   pseudonymizer: GemmaPseudonymizer;
   ready: boolean;

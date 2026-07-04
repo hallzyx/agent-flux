@@ -20,9 +20,11 @@ class CycleState:
     masked_text: str
     resume_token: str
     paused: bool = False
+    pause_kind: str | None = None  # "plan_approval" | "escalation"
     escalation_payload: dict[str, Any] | None = None
     partial_prd: dict[str, Any] | None = None
     plan: list[str] | None = None
+    supervisor_note: str | None = None
     step_index: int = 0
 
 

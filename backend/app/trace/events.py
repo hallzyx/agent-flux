@@ -69,7 +69,7 @@ class EscalationResponse(BaseModel):
 class VerdictRequest(BaseModel):
     session_id: str
     cycle_id: str
-    verdict: Literal["accept", "redirect"]
+    verdict: Literal["accept", "redirect", "reject"]
     note: str | None = None
 
 

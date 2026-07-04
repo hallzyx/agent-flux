@@ -60,6 +60,12 @@ async def ping_vultr(body: PingRequest) -> PingResponse:
     )
 
 
+class ApprovePlanRequest(BaseModel):
+    session_id: str
+    resume_token: str
+    approved_steps: list[str] | None = None
+
+
 @app.post("/api/cycle")
 async def start_cycle(body: CycleStartRequest) -> StreamingResponse:
     async def event_generator():
@@ -69,6 +75,20 @@ async def start_cycle(body: CycleStartRequest) -> StreamingResponse:
             resume_token=body.resume_token,
             escalation_response=body.escalation_response,
             supervisor_note=body.supervisor_note,
+        ):
+            yield chunk
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@app.post("/api/cycle/approve-plan")
+async def approve_plan(body: ApprovePlanRequest) -> StreamingResponse:
+    async def event_generator():
+        async for chunk in run_cycle_stream(
+            masked_text="",
+            session_id=body.session_id,
+            resume_token=body.resume_token,
+            plan_approval={"approved_steps": body.approved_steps},
         ):
             yield chunk
 

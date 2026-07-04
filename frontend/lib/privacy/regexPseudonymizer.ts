@@ -7,7 +7,7 @@ const DATE_RE =
 const NDA_RE = /\bNDA-\d{4}-\d{4}\b/gi;
 const PHONE_RE = /\b\+?\d{1,3}[-.\s]?\(?\d{2,4}\)?[-.\s]?\d{3,4}[-.\s]?\d{3,4}\b/g;
 
-const KNOWN_CLIENTS = ["Acme Corp", "Globex Inc", "Initech"];
+const KNOWN_CLIENTS = ["Meridian Capital", "Globex Inc", "Initech", "Acme Corp"];
 const KNOWN_PEOPLE = ["Jane Smith", "Robert Chen", "John Doe"];
 
 function budgetMagnitude(value: string): string {
@@ -43,33 +43,49 @@ function applyReplacements(
   });
 }
 
+/** Deterministic pass for formats LLMs often miss (emails, currency, dates). */
+export function applyStructuredPatterns(
+  text: string,
+  mapping: MappingEntry[],
+  counters: Record<string, number>,
+): string {
+  let masked = text;
+  masked = applyReplacements(masked, EMAIL_RE, "EMAIL", mapping, counters, (_, id) => `[EMAIL_${id}]`);
+  masked = applyReplacements(masked, BUDGET_RE, "BUDGET", mapping, counters, (m, id) => {
+    const mag = budgetMagnitude(m);
+    return `[BUDGET_${id}: ~${mag}]`;
+  });
+  masked = applyReplacements(masked, DATE_RE, "DEADLINE", mapping, counters, (_, id) => `[DEADLINE_${id}]`);
+  masked = applyReplacements(masked, NDA_RE, "NDA", mapping, counters, (_, id) => `[NDA_${id}]`);
+  masked = applyReplacements(masked, PHONE_RE, "PHONE", mapping, counters, (_, id) => `[PHONE_${id}]`);
+  return masked;
+}
+
+function applyKnownNamedEntities(
+  text: string,
+  mapping: MappingEntry[],
+  counters: Record<string, number>,
+): string {
+  let masked = text;
+  for (const client of KNOWN_CLIENTS) {
+    const re = new RegExp(client.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g");
+    masked = applyReplacements(masked, re, "CLIENT", mapping, counters, (_, id) => `[CLIENT_${id}]`);
+  }
+  for (const person of KNOWN_PEOPLE) {
+    const re = new RegExp(person.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g");
+    masked = applyReplacements(masked, re, "PERSON", mapping, counters, (_, id) => `[PERSON_${id}]`);
+  }
+  return masked;
+}
+
 export class RegexPseudonymizer implements PseudonymizerPort {
   readonly name = "regex-v1";
 
   pseudonymize(text: string): PseudonymizeResult {
     const mapping: MappingEntry[] = [];
     const counters: Record<string, number> = {};
-    let masked = text;
-
-    for (const client of KNOWN_CLIENTS) {
-      const re = new RegExp(client.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g");
-      masked = applyReplacements(masked, re, "CLIENT", mapping, counters, (_, id) => `[CLIENT_${id}]`);
-    }
-
-    for (const person of KNOWN_PEOPLE) {
-      const re = new RegExp(person.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g");
-      masked = applyReplacements(masked, re, "PERSON", mapping, counters, (_, id) => `[PERSON_${id}]`);
-    }
-
-    masked = applyReplacements(masked, EMAIL_RE, "EMAIL", mapping, counters, (_, id) => `[EMAIL_${id}]`);
-    masked = applyReplacements(masked, BUDGET_RE, "BUDGET", mapping, counters, (m, id) => {
-      const mag = budgetMagnitude(m);
-      return `[BUDGET_${id}: ~${mag}]`;
-    });
-    masked = applyReplacements(masked, DATE_RE, "DEADLINE", mapping, counters, (_, id) => `[DEADLINE_${id}]`);
-    masked = applyReplacements(masked, NDA_RE, "NDA", mapping, counters, (_, id) => `[NDA_${id}]`);
-    masked = applyReplacements(masked, PHONE_RE, "PHONE", mapping, counters, (_, id) => `[PHONE_${id}]`);
-
+    let masked = applyKnownNamedEntities(text, mapping, counters);
+    masked = applyStructuredPatterns(masked, mapping, counters);
     return { maskedText: masked, mapping };
   }
 

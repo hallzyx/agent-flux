@@ -41,11 +41,11 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ## Demo flow (one Flux Cycle)
 
-1. Upload a client brief (or click **Load demo brief**)
+1. Upload a client RFP (or click **Load demo brief (Finance)**)
 2. Review pseudonymized text — **nothing is sent until you approve**
-3. Watch the Flux Cycle trace: Plan → Retrievals → Tools (LLM) → Escalation → Critic
+3. Watch the Flux Cycle trace: **Approve plan** → Retrievals → Tools (LLM) → Escalation → Critic → **Completion report**
 4. Accept escalation default (1 click) — recorded as precedent
-5. Validate PRD → Accept or **Redirect** (editable note → revision 2) → re-identified export (JSON + Markdown)
+5. Validate PRD → Accept, **Redirect**, or **Reject frame** → re-identified export (JSON + Markdown)
 
 Run the demo brief **twice** in the same session to see **precedent applied** (no second escalation).
 
@@ -78,14 +78,29 @@ cd backend && uv run pytest
 
 ## Known issues
 
-- Gemma on-device (M10): loads Gemma 3 270M via MediaPipe + WebGPU, caches model in OPFS, regex baseline with Gemma supplemental NER; falls back to regex-only when WebGPU or model load fails
+- Gemma on-device (M10): when loaded, **Gemma leads NER** on the brief; regex applies structured patterns (email, budget, date) as safety net. Falls back to full regex without WebGPU/model
 - Executor tools (`score_risks_llm`, `estimate_effort_llm`) use Vultr with reinforcement prompting; fall back to deterministic tools without API key
 - In-memory session store (no persistence across server restarts)
 
-## Hackathon tracks
+## Hackathon track: Vultr (Finance vertical)
 
-- **Vultr** — Enterprise agent with plan, multi-retrieval, tools, escalation
-- **Cursor** — Real PM workflow with interactive supervision checkpoints
+**Document-grounded enterprise agent** for regulated **Finance / lending** workflows: a confidential client RFP is ingested, the agent plans, retrieves the document multiple times, calls tools, escalates ambiguous fee-structure decisions, and produces an execution-ready delivery spec with full SSE trace.
+
+| Vultr Finance example pattern | Agent Flux |
+|-------------------------------|------------|
+| Ingest credit agreement / filings | Client RFP brief (Meridian Capital lending portal) |
+| Multi-step plan | Planner LLM + supervisor plan approval |
+| Multiple retrievals | Targeted queries on RFP sections (auth, licensing, compliance) |
+| Calculation / verification tools | extract_requirements, score_risks_llm, estimate_effort_llm |
+| Flag ambiguous clause → human decision | Payment/fee model escalation (4-part protocol) |
+| Output with citation trail | Trace + completion report + Jira/Markdown export |
+
+Demo fixture: **Load demo brief (Finance)** — same mechanical gates (payment ambiguity, Q3 2026 phase 2, SSO).
+
+## Hackathon tracks (reference)
+
+- **Vultr** — Primary submission: Finance document-grounded enterprise agent (plan, multi-retrieval, tools, escalation)
+- **Cursor** — Interactive supervision checkpoints (boundary, plan, escalation, validate)
 - **DeepMind** — Privacy boundary with on-device pseudonymization (Gemma when available)
 
 ## License
