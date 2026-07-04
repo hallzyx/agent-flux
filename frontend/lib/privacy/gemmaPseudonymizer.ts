@@ -8,7 +8,7 @@ import {
   isGemmaEngineReady,
   webGpuAvailable,
 } from "./gemmaEngine";
-import { applyStructuredPatterns, RegexPseudonymizer } from "./regexPseudonymizer";
+import { applyStructuredPatterns, applyResidualOrgPatterns, RegexPseudonymizer } from "./regexPseudonymizer";
 
 /**
  * Gemma on-device pseudonymizer (M10).
@@ -71,6 +71,7 @@ export class GemmaPseudonymizer implements PseudonymizerPort {
 
       let masked = applyDetectedEntities(text, mapping, counters, entities);
       masked = applyStructuredPatterns(masked, mapping, counters);
+      masked = applyResidualOrgPatterns(masked, mapping, counters);
       return { maskedText: masked, mapping };
     } catch (err) {
       console.warn("Gemma NER failed; falling back to regex", err);

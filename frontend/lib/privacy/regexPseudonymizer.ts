@@ -43,6 +43,8 @@ function applyReplacements(
   });
 }
 
+const ORG_LLP_RE = /\b[A-Z][A-Za-z0-9&\s-]{2,50} LLP\b/g;
+
 /** Deterministic pass for formats LLMs often miss (emails, currency, dates). */
 export function applyStructuredPatterns(
   text: string,
@@ -59,6 +61,15 @@ export function applyStructuredPatterns(
   masked = applyReplacements(masked, NDA_RE, "NDA", mapping, counters, (_, id) => `[NDA_${id}]`);
   masked = applyReplacements(masked, PHONE_RE, "PHONE", mapping, counters, (_, id) => `[PHONE_${id}]`);
   return masked;
+}
+
+/** Catches org names Gemma missed (e.g. law firms) — safety net after LLM NER. */
+export function applyResidualOrgPatterns(
+  text: string,
+  mapping: MappingEntry[],
+  counters: Record<string, number>,
+): string {
+  return applyReplacements(text, ORG_LLP_RE, "CLIENT", mapping, counters, (_, id) => `[CLIENT_${id}]`);
 }
 
 function applyKnownNamedEntities(
@@ -86,6 +97,7 @@ export class RegexPseudonymizer implements PseudonymizerPort {
     const counters: Record<string, number> = {};
     let masked = applyKnownNamedEntities(text, mapping, counters);
     masked = applyStructuredPatterns(masked, mapping, counters);
+    masked = applyResidualOrgPatterns(masked, mapping, counters);
     return { maskedText: masked, mapping };
   }
 

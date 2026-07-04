@@ -18,9 +18,9 @@ describe("PseudonymizerPort round-trip (M2 gate)", () => {
     }
   });
 
-  it("does not mask gemma-only entities (regex baseline)", () => {
+  it("masks residual LLP org names (Hartwell safety net)", () => {
     const { maskedText } = pseudonymizer.pseudonymize(GOLDEN_BRIEF);
-    expect(maskedText).toContain("Hartwell & Partners LLP");
+    expect(maskedText).not.toContain("Hartwell & Partners LLP");
   });
 
   it("uses typed placeholders with magnitude for budget", () => {
