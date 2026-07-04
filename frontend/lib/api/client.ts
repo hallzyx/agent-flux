@@ -25,6 +25,7 @@ export function streamCycle(
     session_id: string;
     resume_token?: string;
     escalation_response?: { selected_option_id: string };
+    supervisor_note?: string;
   },
   onEvent: (event: TraceEvent) => void,
   onDone: () => void,

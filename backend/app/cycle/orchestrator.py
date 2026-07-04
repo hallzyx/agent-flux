@@ -12,6 +12,7 @@ from app.config import settings
 from app.llm import vultr
 from app.session.store import CycleState, Precedent, get_session
 from app.tools import deterministic as tools
+from app.tools import llm_tools
 from app.trace.events import (
     EscalationOption,
     EscalationPayload,
@@ -224,12 +225,69 @@ async def _run_critic(prd: dict[str, Any], cycle_id: str) -> tuple[list[TraceEve
     return events, prd_out
 
 
+async def _llm_enrich_requirements(
+    masked_text: str,
+    requirements: list[dict[str, Any]],
+    supervisor_note: str | None = None,
+) -> list[dict[str, Any]]:
+    """Optional LLM pass — adds requirements regex may miss. Falls back silently."""
+    if not settings.vultr_api_key:
+        return requirements
+    note_clause = f"\nSupervisor redirect to apply: {supervisor_note}" if supervisor_note else ""
+    try:
+        reply = await vultr.chat_completion(
+            model=settings.vultr_executor_model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a requirements analyst. Output JSON only: "
+                        '{"requirements": [{"id": "REQ-LLM-001", "text": "...", "source_section": "..."}]}. '
+                        "Add up to 3 requirements the baseline pass missed."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"Brief:\n{masked_text[:2500]}\n"
+                        f"Existing requirements:\n{json.dumps(requirements[:6])}{note_clause}"
+                    ),
+                },
+            ],
+            temperature=0.2,
+        )
+        parsed = json.loads(reply)
+        extra = parsed.get("requirements", [])
+        if not isinstance(extra, list):
+            return requirements
+        merged = list(requirements)
+        existing_ids = {r["id"] for r in merged}
+        for item in extra:
+            if not isinstance(item, dict) or not item.get("text"):
+                continue
+            req_id = str(item.get("id", f"REQ-LLM-{len(merged) + 1:03d}"))
+            if req_id in existing_ids:
+                continue
+            merged.append(
+                {
+                    "id": req_id,
+                    "text": str(item["text"]),
+                    "source_section": str(item.get("source_section", "LLM enrichment")),
+                    "source_id": "llm",
+                }
+            )
+        return merged
+    except Exception:
+        return requirements
+
+
 async def run_cycle_stream(
     *,
     masked_text: str,
     session_id: str,
     resume_token: str | None = None,
     escalation_response: dict[str, Any] | None = None,
+    supervisor_note: str | None = None,
 ) -> AsyncGenerator[str, None]:
     """SSE stream of TraceEvents for a full Flux Cycle."""
     cycle_id = str(uuid4())
@@ -239,6 +297,19 @@ async def run_cycle_stream(
         return f"data: {event.model_dump_json()}\n\n"
 
     yield sse(_event(cycle_id, TraceEventType.STATUS, "Flux Cycle started", {"contract": ACCEPTANCE_CONTRACT}))
+
+    note = supervisor_note.strip() if supervisor_note else None
+    if note:
+        session.redirect_notes.append(note)
+        session.revision += 1
+        yield sse(
+            _event(
+                cycle_id,
+                TraceEventType.STATUS,
+                "Supervisor redirect — replanning with correction",
+                {"supervisor_note": note, "revision": session.revision},
+            )
+        )
 
     # Resume from escalation
     if resume_token and escalation_response:
@@ -281,25 +352,46 @@ async def run_cycle_stream(
         "Build epics and acceptance criteria",
         "Run critic review against contract",
     ]
-    yield sse(_event(cycle_id, TraceEventType.PLAN, "Execution plan approved", {"steps": plan_steps}))
+    if note:
+        plan_steps = [
+            f"Apply supervisor redirect (revision {session.revision}): {note}",
+            "Re-scope epics and stories per supervisor correction",
+            *plan_steps,
+        ]
 
     if settings.vultr_api_key:
         try:
+            plan_user = f"Plan PRD generation for this brief:\n{masked_text[:3000]}"
+            if note:
+                plan_user += f"\n\nSupervisor rejected the prior draft. Correction required: {note}"
             llm_plan = await vultr.chat_completion(
                 model=settings.vultr_executor_model,
                 messages=[
                     {"role": "system", "content": "You are a Planner agent. Output a JSON array of 4-6 plan step strings."},
-                    {"role": "user", "content": f"Plan PRD generation for this brief:\n{masked_text[:3000]}"},
+                    {"role": "user", "content": plan_user},
                 ],
             )
             try:
                 parsed = json.loads(llm_plan)
                 if isinstance(parsed, list):
-                    plan_steps = [str(s) for s in parsed]
+                    llm_steps = [str(s) for s in parsed]
+                    if note:
+                        plan_steps = plan_steps[:2] + llm_steps
+                    else:
+                        plan_steps = llm_steps
             except json.JSONDecodeError:
                 pass
         except Exception:
             pass
+
+    yield sse(
+        _event(
+            cycle_id,
+            TraceEventType.PLAN,
+            "Execution plan approved",
+            {"steps": plan_steps, "revision": session.revision, "supervisor_note": note},
+        )
+    )
 
     await asyncio.sleep(0.1)
 
@@ -317,27 +409,75 @@ async def run_cycle_stream(
             cycle_id,
             TraceEventType.TOOL_CALL,
             "extract_requirements",
-            {"tool": "extract_requirements", "count": len(requirements), "requirements": requirements[:5]},
+            {"tool": "extract_requirements", "engine": "deterministic", "count": len(requirements), "requirements": requirements[:5]},
         )
     )
 
-    risks = tools.score_risks(requirements)
+    enriched = await _llm_enrich_requirements(masked_text, requirements, note)
+    if len(enriched) > len(requirements):
+        yield sse(
+            _event(
+                cycle_id,
+                TraceEventType.TOOL_CALL,
+                "extract_requirements_llm",
+                {
+                    "tool": "extract_requirements_llm",
+                    "engine": "vultr",
+                    "added": len(enriched) - len(requirements),
+                    "requirements": enriched[len(requirements) :][:3],
+                },
+            )
+        )
+        requirements = enriched
+
+    if note:
+        redirect_req = {
+            "id": "REQ-SUPERVISOR",
+            "text": f"Supervisor redirect (revision {session.revision}): {note}",
+            "source_section": "Supervisor correction",
+            "source_id": "supervisor",
+        }
+        requirements = [redirect_req, *requirements]
+
+    risks, risks_engine, risks_meta = await llm_tools.score_risks_llm(
+        requirements,
+        masked_text=masked_text,
+        supervisor_note=note,
+        acceptance_contract=ACCEPTANCE_CONTRACT,
+    )
     yield sse(
         _event(
             cycle_id,
             TraceEventType.TOOL_CALL,
-            "score_risks",
-            {"tool": "score_risks", "risks": risks},
+            "score_risks_llm",
+            {
+                "tool": "score_risks_llm",
+                "engine": risks_engine,
+                "prompt_version": risks_meta.get("prompt_version"),
+                "reinforcement": risks_meta.get("reinforcement"),
+                "risks": risks,
+            },
         )
     )
 
-    stories = tools.estimate_effort(requirements, risks)
+    stories, effort_engine, effort_meta = await llm_tools.estimate_effort_llm(
+        requirements,
+        risks,
+        masked_text=masked_text,
+        supervisor_note=note,
+    )
     yield sse(
         _event(
             cycle_id,
             TraceEventType.TOOL_CALL,
-            "estimate_effort",
-            {"tool": "estimate_effort", "stories": stories[:8]},
+            "estimate_effort_llm",
+            {
+                "tool": "estimate_effort_llm",
+                "engine": effort_engine,
+                "prompt_version": effort_meta.get("prompt_version"),
+                "reinforcement": effort_meta.get("reinforcement"),
+                "stories": stories[:8],
+            },
         )
     )
 
@@ -349,7 +489,12 @@ async def run_cycle_stream(
         "risks": risks,
         "stories": stories,
         "acceptance_contract": ACCEPTANCE_CONTRACT,
+        "revision": session.revision,
     }
+    if note:
+        stories, epics, prd = tools.apply_supervisor_redirect(stories, epics, prd, note, session.revision)
+        prd["epics"] = epics
+        prd["stories"] = stories
     prd = _inject_planted_error(prd)
 
     # Escalation / precedent

@@ -207,7 +207,7 @@ export default function HomePage() {
     return buildReidentifiedExport(prd, pseudonymizer, mapping)?.markdown ?? "";
   }, [prd, pseudonymizer, mapping]);
 
-  const startCycle = useCallback((options?: { keepTrace?: boolean; keepPrecedent?: boolean }) => {
+  const startCycle = useCallback((options?: { keepTrace?: boolean; keepPrecedent?: boolean; supervisorNote?: string }) => {
     if (!options?.keepTrace) setEvents([]);
     setRunning(true);
     setStep("running");
@@ -221,7 +221,11 @@ export default function HomePage() {
     }
 
     abortRef.current = streamCycle(
-      { masked_text: maskedText, session_id: sessionId },
+      {
+        masked_text: maskedText,
+        session_id: sessionId,
+        supervisor_note: options?.supervisorNote,
+      },
       handleEvent,
       () => setRunning(false),
       (err) => {
@@ -285,7 +289,7 @@ export default function HomePage() {
     await submitVerdict({ session_id: sessionId, cycle_id: cycleId, verdict: "redirect", note });
     setEvents((prev) => [...prev, redirectEvent]);
     setReidentifiedMd("");
-    startCycle({ keepTrace: true, keepPrecedent: true });
+    startCycle({ keepTrace: true, keepPrecedent: true, supervisorNote: note });
   };
 
   const handleExport = () => {

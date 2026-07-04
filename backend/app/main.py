@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from app.config import settings
 from app.cycle.orchestrator import ACCEPTANCE_CONTRACT, run_cycle_stream
+from app.session.store import get_session
 from app.llm import vultr
 from app.trace.events import (
     CycleStartRequest,
@@ -67,6 +68,7 @@ async def start_cycle(body: CycleStartRequest) -> StreamingResponse:
             session_id=body.session_id,
             resume_token=body.resume_token,
             escalation_response=body.escalation_response,
+            supervisor_note=body.supervisor_note,
         ):
             yield chunk
 
@@ -95,6 +97,9 @@ async def resume_cycle(body: ResumeRequest) -> StreamingResponse:
 
 @app.post("/api/verdict")
 async def submit_verdict(body: VerdictRequest) -> TraceEvent:
+    if body.verdict == "redirect" and body.note:
+        session = get_session(body.session_id)
+        session.redirect_notes.append(body.note)
     return TraceEvent(
         cycle_id=body.cycle_id,
         type=TraceEventType.VERDICT,
