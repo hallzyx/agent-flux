@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import type { PrdDraft } from "@/lib/trace/events";
 
 interface ValidationPanelProps {
@@ -17,6 +18,8 @@ export function ValidationPanel({
   onExport,
   reidentifiedMarkdown,
 }: ValidationPanelProps) {
+  const [redirectNote, setRedirectNote] = useState("Needs revision on scope");
+
   return (
     <div className="validation-panel">
       <h2>Validate PRD</h2>
@@ -34,13 +37,23 @@ export function ValidationPanel({
         )}
       </div>
       <div className="actions">
+        <label className="redirect-note">
+          Supervisor redirect note
+          <textarea
+            value={redirectNote}
+            onChange={(e) => setRedirectNote(e.target.value)}
+            rows={2}
+            placeholder="What should change in the next revision?"
+          />
+        </label>
         <button type="button" className="primary" onClick={onAccept}>
           Accept
         </button>
         <button
           type="button"
           className="secondary"
-          onClick={() => onRedirect("Needs revision on scope")}
+          disabled={!redirectNote.trim()}
+          onClick={() => onRedirect(redirectNote.trim())}
         >
           Redirect
         </button>

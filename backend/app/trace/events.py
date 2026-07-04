@@ -56,6 +56,7 @@ class CycleStartRequest(BaseModel):
     session_id: str = Field(default_factory=lambda: str(uuid4()))
     resume_token: str | None = None
     escalation_response: dict[str, Any] | None = None
+    supervisor_note: str | None = None
 
 
 class EscalationResponse(BaseModel):

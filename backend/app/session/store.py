@@ -30,6 +30,8 @@ class CycleState:
 class SessionStore:
     precedents: list[Precedent] = field(default_factory=list)
     cycles: dict[str, CycleState] = field(default_factory=dict)
+    redirect_notes: list[str] = field(default_factory=list)
+    revision: int = 1
 
 
 _store: dict[str, SessionStore] = {}

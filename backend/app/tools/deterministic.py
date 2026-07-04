@@ -180,7 +180,42 @@ def export_structured(prd: dict[str, Any]) -> dict[str, Any]:
     return {"markdown": markdown, "jira": {"issues": jira_issues}, "linear": {"issues": jira_issues}}
 
 
-def detect_planted_ambiguity(masked_text: str) -> dict[str, Any] | None:
+def apply_supervisor_redirect(
+    stories: list[dict[str, Any]],
+    epics: list[dict[str, Any]],
+    prd: dict[str, Any],
+    note: str,
+    revision: int,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+    """Inject supervisor redirect epic/story so revision cycles differ visibly."""
+    prd = dict(prd)
+    prd["revision"] = revision
+    prd["supervisor_redirect"] = note
+    prd["title"] = f"Client Brief PRD — revision {revision}"
+
+    redirect_story = {
+        "requirement_id": "REQ-SUPERVISOR",
+        "title": f"[Revision {revision}] {note[:100]}",
+        "size": "M",
+        "criteria": [
+            f"Implements supervisor redirect: {note}",
+            "Scope aligned with acceptance contract",
+            "Includes unit tests",
+        ],
+    }
+    stories = [redirect_story, *stories]
+
+    redirect_epic = {
+        "id": f"EPIC-SUP-{revision:02d}",
+        "title": f"Supervisor redirect — revision {revision}",
+        "stories": [redirect_story],
+        "acceptance_criteria": [f"Redirect addressed: {note[:120]}"],
+    }
+    epics = [redirect_epic, *epics]
+    return stories, epics, prd
+
+
+def detect_planted_ambiguity(masked_text: str) -> dict[str, str] | None:
     """Detect the golden-fixture ambiguity (payment model)."""
     patterns = [
         r"payment model[^.]{0,120}(one[- ]time|subscription|recurring|license)",

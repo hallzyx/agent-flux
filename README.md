@@ -12,7 +12,7 @@ This repo contains:
 ### Prerequisites
 - Node.js 20+ and pnpm
 - Python 3.11+ and [uv](https://github.com/astral-sh/uv) (or pip)
-- Vultr Serverless Inference API key (optional for local demo — deterministic tools work without LLM)
+- Vultr Serverless Inference API key (optional for local demo — deterministic fallbacks when LLM unavailable)
 
 ### Backend
 
@@ -43,9 +43,9 @@ Open [http://localhost:3000](http://localhost:3000).
 
 1. Upload a client brief (or click **Load demo brief**)
 2. Review pseudonymized text — **nothing is sent until you approve**
-3. Watch the Flux Cycle trace: Plan → Retrievals → Tools → Escalation → Critic
+3. Watch the Flux Cycle trace: Plan → Retrievals → Tools (LLM) → Escalation → Critic
 4. Accept escalation default (1 click) — recorded as precedent
-5. Validate PRD → Accept → re-identified export (JSON + Markdown)
+5. Validate PRD → Accept or **Redirect** (editable note → revision 2) → re-identified export (JSON + Markdown)
 
 Run the demo brief **twice** in the same session to see **precedent applied** (no second escalation).
 
@@ -79,7 +79,7 @@ cd backend && uv run pytest
 ## Known issues
 
 - Gemma on-device (M10): loads Gemma 3 270M via MediaPipe + WebGPU, caches model in OPFS, regex baseline with Gemma supplemental NER; falls back to regex-only when WebGPU or model load fails
-- Vultr LLM calls are optional; core pipeline is deterministic for demo reliability
+- Executor tools (`score_risks_llm`, `estimate_effort_llm`) use Vultr with reinforcement prompting; fall back to deterministic tools without API key
 - In-memory session store (no persistence across server restarts)
 
 ## Hackathon tracks

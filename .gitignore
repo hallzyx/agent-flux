@@ -29,8 +29,10 @@ Thumbs.db
 # Demo cache (optional local)
 backend/app/demo_cache/*.json
 
-# Local hackathon docs (private)
-local/
+# Local hackathon docs (private) — product/dev specs tracked
+local/*
+!local/PRODUCTO.md
+!local/DESARROLLO.md
 
 # Gemma on-device model weights (large, gated) — keep the folder README only
 frontend/public/models/*
