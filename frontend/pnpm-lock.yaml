@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@mediapipe/tasks-genai':
+        specifier: ^0.10.28
+        version: 0.10.28
       next:
         specifier: ^15.1.0
         version: 15.5.20(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -392,6 +395,9 @@ packages:
 
   '@jridgewell/sourcemap-codec@1.5.5':
     resolution: {integrity: sha512-cYQ9310grqxueWbl+WuIUIaiUaDcj7WOq5fVhEljNVgRfOUhY9fy2zTvfoqWsnebh8Sl70VScFbICvJnLKB0Og==}
+
+  '@mediapipe/tasks-genai@0.10.28':
+    resolution: {integrity: sha512-nMEGhMHNW2jKadU+YE7EPb1MXOwIrFC583zdLbA49oRqPd/XcSxD+s0X7rMMs1VEarvWrYHZdIRVMBaxFJ1XcQ==}
 
   '@napi-rs/canvas-android-arm64@0.1.100':
     resolution: {integrity: sha512-hjhCKhntPv9+t4ckHymdx0phYNcVW+GKQR6Lzw2zE+pOVjOplSmtx9nNNknTjbEDLcuLZqA1y8ufKg1XfgftzQ==}
@@ -2381,6 +2387,8 @@ snapshots:
     optional: true
 
   '@jridgewell/sourcemap-codec@1.5.5': {}
+
+  '@mediapipe/tasks-genai@0.10.28': {}
 
   '@napi-rs/canvas-android-arm64@0.1.100':
     optional: true

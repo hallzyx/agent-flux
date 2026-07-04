@@ -78,7 +78,7 @@ cd backend && uv run pytest
 
 ## Known issues
 
-- Gemma on-device (M10) uses regex fallback when WebGPU/MediaPipe unavailable
+- Gemma on-device (M10): loads Gemma 3 270M via MediaPipe + WebGPU, caches model in OPFS, regex baseline with Gemma supplemental NER; falls back to regex-only when WebGPU or model load fails
 - Vultr LLM calls are optional; core pipeline is deterministic for demo reliability
 - In-memory session store (no persistence across server restarts)
 

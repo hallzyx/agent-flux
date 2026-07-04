@@ -19,7 +19,7 @@ import {
 import { GOLDEN_BRIEF, GOLDEN_ENTITIES } from "@/lib/fixtures/goldenBrief";
 import { createPseudonymizer, setPseudonymizer } from "@/lib/privacy/regexPseudonymizer";
 import { buildReidentifiedExport } from "@/lib/privacy/reidentifyExport";
-import { tryEnableGemma } from "@/lib/privacy/gemmaPseudonymizer";
+import { isGemmaPseudonymizer, tryEnableGemma } from "@/lib/privacy/gemmaPseudonymizer";
 import type { MappingEntry } from "@/lib/privacy/types";
 import type { EscalationPayload, PrdDraft, TraceEvent } from "@/lib/trace/events";
 
@@ -47,6 +47,7 @@ export default function HomePage() {
   const [pingResult, setPingResult] = useState<string>("");
   const [pseudonymizerName, setPseudonymizerName] = useState("regex-v1");
   const [gemmaProgress, setGemmaProgress] = useState<number | null>(null);
+  const [enrichingMask, setEnrichingMask] = useState(false);
   const abortRef = useRef<(() => void) | null>(null);
   const [networkSent, setNetworkSent] = useState(false);
 
@@ -72,13 +73,26 @@ export default function HomePage() {
   const pseudonymizer = useMemo(() => createPseudonymizer(), [pseudonymizerVersion]);
 
   const handleTextExtracted = useCallback(
-    (text: string) => {
+    async (text: string) => {
       setOriginalText(text);
-      const result = pseudonymizer.pseudonymize(text);
+      let result = pseudonymizer.pseudonymize(text);
       setMaskedText(result.maskedText);
       setMapping(result.mapping);
       setStep("boundary");
       setNetworkSent(false);
+
+      if (isGemmaPseudonymizer(pseudonymizer) && pseudonymizer.isReady()) {
+        setEnrichingMask(true);
+        try {
+          result = await pseudonymizer.enrichWithGemma(text, result);
+          setMaskedText(result.maskedText);
+          setMapping(result.mapping);
+        } catch (err) {
+          console.warn("Gemma enrichment skipped", err);
+        } finally {
+          setEnrichingMask(false);
+        }
+      }
     },
     [pseudonymizer],
   );
@@ -246,13 +260,18 @@ export default function HomePage() {
           )}
 
           {step === "boundary" && (
-            <BoundaryReview
-              original={originalText}
-              masked={maskedText}
-              mapping={mapping}
-              onApprove={handleApproveBoundary}
-              onCancel={() => setStep("upload")}
-            />
+            <>
+              {enrichingMask && (
+                <p className="gemma-status">Enriching mask with Gemma on-device…</p>
+              )}
+              <BoundaryReview
+                original={originalText}
+                masked={maskedText}
+                mapping={mapping}
+                onApprove={handleApproveBoundary}
+                onCancel={() => setStep("upload")}
+              />
+            </>
           )}
 
           {(step === "running" || step === "escalation" || step === "validate" || step === "done") && (
