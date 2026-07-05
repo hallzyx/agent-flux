@@ -21,6 +21,14 @@ interface TracePanelProps {
   mode?: "rail" | "expanded";
 }
 
+function renderEngineBadge(engine?: string) {
+  if (engine === "vultr") return <span className="engine-badge vultr">Vultr</span>;
+  if (engine === "partial") return <span className="engine-badge partial">Vultr · partial</span>;
+  if (engine === "deterministic_fallback") return <span className="engine-badge fallback">local fallback</span>;
+  if (engine === "deterministic") return <span className="engine-badge local">local</span>;
+  return null;
+}
+
 export function TracePanel({ events, running, mode = "expanded" }: TracePanelProps) {
   if (mode === "rail") {
     return (
@@ -52,6 +60,9 @@ export function TracePanel({ events, running, mode = "expanded" }: TracePanelPro
                 {ev.data.pending_approval ? (
                   <p className="plan-pending">Awaiting supervisor approval</p>
                 ) : null}
+                {ev.data.engine ? (
+                  <p className="tool-call-line">{renderEngineBadge(ev.data.engine as string)}</p>
+                ) : null}
                 <ol>{(ev.data.steps as string[]).map((s, i) => <li key={i}>{s}</li>)}</ol>
               </>
             )}
@@ -59,7 +70,19 @@ export function TracePanel({ events, running, mode = "expanded" }: TracePanelPro
               <blockquote>{String(ev.data.excerpt || "").slice(0, 200)}…</blockquote>
             )}
             {ev.type === "tool_call" && (
-              <code>{String(ev.data.tool)}</code>
+              <p className="tool-call-line">
+                <code>{String(ev.data.tool)}</code>
+                {renderEngineBadge(ev.data.engine as string | undefined)}
+              </p>
+            )}
+            {ev.type === "critic" && (
+              <p className="tool-call-line">
+                {ev.data.engine === "vultr" ? (
+                  <span className="engine-badge vultr">Vultr · {String(ev.data.model)}</span>
+                ) : (
+                  renderEngineBadge(ev.data.engine as string | undefined)
+                )}
+              </p>
             )}
             {ev.type === "critic" && ev.data.completion_report && (
               <p className="completion-summary">

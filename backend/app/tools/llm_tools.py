@@ -41,15 +41,18 @@ overall_score = round(ambiguity * 0.5 + external_dependency * 0.25 + technical_c
 
 HARD RULES — pipeline fails if violated
 1. One risk object per requirement_id in the input list. Preserve exact IDs.
-2. Payment / licensing ambiguity: if text mentions payment model, subscription vs one-time,
-   license fee ambiguity, or explicit either/or on billing → ambiguity >= 0.85 AND triggers_escalation = true.
-3. SSO, Okta, third-party integrations → external_dependency >= 0.6.
-4. Compliance, security, migration, real-time → technical_complexity >= 0.7.
+2. Unresolved either/or: if a requirement presents two or more mutually exclusive
+   options (either/or, this-or-that, "could mean X or Y") and does NOT state which one
+   applies, AND that choice materially changes downstream architecture, cost, or scope
+   → ambiguity >= 0.85 AND triggers_escalation = true.
+3. External dependency: if a requirement relies on a third-party system, external vendor,
+   or an integration the team does not control → external_dependency >= 0.6.
+4. Compliance, security, data migration, or real-time requirements → technical_complexity >= 0.7.
 5. justifications must quote or paraphrase the requirement — no generic filler.
 
 FEW-SHOT
-Input: {"id":"REQ-003","text":"The payment model is ambiguous — subscription OR one-time license."}
-Output risk: {"requirement_id":"REQ-003","ambiguity":0.95,"external_dependency":0.25,"technical_complexity":0.45,"overall_score":0.61,"justification":"Explicit either/or payment model requires human escalation.","triggers_escalation":true}
+Input: {"id":"REQ-042","text":"Patient records may be stored on-premise OR with a third-party cloud provider; the RFP does not specify which, and it drives the entire compliance and hosting design."}
+Output risk: {"requirement_id":"REQ-042","ambiguity":0.9,"external_dependency":0.55,"technical_complexity":0.7,"overall_score":0.76,"justification":"Unresolved on-premise vs third-party cloud choice blocks compliance and hosting architecture, so it requires human escalation.","triggers_escalation":true}
 """
 
 ESTIMATE_EFFORT_SYSTEM = """You are the Estimation tool in the Agent Flux executor pipeline.
@@ -83,8 +86,8 @@ HARD RULES
 5. Titles are imperative ("Implement…", "Add…") not descriptions.
 
 FEW-SHOT
-Input requirement REQ-001 (score 0.3): "Must implement SSO integration with Okta."
-Output: {"requirement_id":"REQ-001","title":"Implement Okta SSO integration","size":"S","criteria":["Okta SAML/OIDC flow works end-to-end","Unit tests cover auth callback","Auth flow documented in README"]}
+Input requirement REQ-018 (score 0.3): "Must integrate with the regional carrier's shipment-tracking API for delivery status."
+Output: {"requirement_id":"REQ-018","title":"Integrate carrier shipment-tracking API","size":"S","criteria":["Delivery-status polling works end-to-end against the carrier API","Unit tests cover the tracking response parser","Integration setup documented in README"]}
 """
 
 
@@ -177,6 +180,12 @@ async def score_risks_llm(
     """
     Score risks via Vultr LLM with reinforcement prompting.
     Returns (risks, engine, meta) where engine is 'vultr' or 'deterministic_fallback'.
+
+    enable_thinking=False: this prompt's HARD RULES already spell out the exact scoring logic
+    (e.g. "payment ambiguity -> ambiguity >= 0.85"), so the model doesn't need to deliberate — it
+    just applies the rubric. Confirmed empirically that leaving the reasoning phase on made the
+    executor model (a Vultr reasoning model) spend its whole token budget on chain-of-thought and
+    hit finish_reason=length before ever writing the JSON answer, on this exact prompt/model.
     """
     meta: dict[str, Any] = {"prompt_version": PROMPT_VERSION, "tool": "score_risks_llm"}
     if not settings.vultr_api_key:
@@ -205,6 +214,7 @@ async def score_risks_llm(
             ],
             temperature=0.1,
             max_tokens=2048,
+            enable_thinking=False,
         )
         parsed = _parse_llm_json(reply)
         if not parsed or not isinstance(parsed.get("risks"), list):
@@ -229,6 +239,9 @@ async def estimate_effort_llm(
     """
     Estimate story sizes via Vultr LLM with reinforcement prompting.
     Returns (stories, engine, meta).
+
+    enable_thinking=False — see `score_risks_llm` docstring; same rubric-driven prompt, same
+    empirically-confirmed fix for the same executor model.
     """
     meta: dict[str, Any] = {"prompt_version": PROMPT_VERSION, "tool": "estimate_effort_llm"}
     if not settings.vultr_api_key:
@@ -256,6 +269,7 @@ async def estimate_effort_llm(
             ],
             temperature=0.15,
             max_tokens=3072,
+            enable_thinking=False,
         )
         parsed = _parse_llm_json(reply)
         if not parsed or not isinstance(parsed.get("stories"), list):

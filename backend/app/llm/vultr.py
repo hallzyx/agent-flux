@@ -19,7 +19,7 @@ def _extract_text(message: object, finish_reason: str | None) -> str:
     content = (getattr(message, "content", None) or "").strip()
     if content:
         return content
-    reasoning = getattr(message, "reasoning_content", None)
+    reasoning = getattr(message, "reasoning_content", None) or getattr(message, "reasoning", None)
     if reasoning and str(reasoning).strip():
         return str(reasoning).strip()[:200]
     refusal = getattr(message, "refusal", None)
@@ -36,13 +36,29 @@ async def chat_completion(
     messages: list[dict[str, str]],
     temperature: float = 0.2,
     max_tokens: int = 4096,
+    enable_thinking: bool | None = None,
 ) -> str:
+    """
+    enable_thinking controls the model's reasoning/chain-of-thought phase (vLLM
+    chat_template_kwargs). Leaving it unset lets the model/template pick a default that, for
+    Vultr's current reasoning models, tends to spend the whole token budget on internal
+    reasoning and never emit a final answer (finish_reason=length, empty content) on
+    structured, multi-item outputs. Pass True to keep deliberation for open-ended judgment
+    calls (e.g. the Critic), or False for tasks whose rules are already explicit in the prompt
+    (e.g. rubric-driven risk scoring) where the extra reasoning adds latency without adding
+    accuracy — confirmed empirically: False gave 9/9 valid, fast responses on the same model
+    that failed most of the time with the parameter unset.
+    """
     client = get_client()
+    extra_body = None
+    if enable_thinking is not None:
+        extra_body = {"chat_template_kwargs": {"enable_thinking": enable_thinking}}
     response = await client.chat.completions.create(
         model=model,
         messages=messages,
         temperature=temperature,
         max_tokens=max_tokens,
+        extra_body=extra_body,
     )
     choice = response.choices[0]
     return _extract_text(choice.message, choice.finish_reason)

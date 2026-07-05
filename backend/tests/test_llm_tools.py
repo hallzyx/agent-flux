@@ -41,6 +41,10 @@ async def test_score_risks_llm_parses_reinforced_response():
     assert len(risks) == len(requirements)
     assert any(r["triggers_escalation"] for r in risks)
     mock_chat.assert_awaited_once()
+    # enable_thinking=False: the HARD RULES already spell out the rubric, so the model doesn't
+    # need to deliberate — and leaving this unset made the executor model burn its token budget
+    # on chain-of-thought and never emit the JSON answer (confirmed against the live API).
+    assert mock_chat.await_args.kwargs["enable_thinking"] is False
     system_msg = mock_chat.await_args.kwargs["messages"][0]["content"]
     assert "HARD RULES" in system_msg
     assert "FEW-SHOT" in system_msg
@@ -84,6 +88,7 @@ async def test_estimate_effort_llm_parses_stories():
     assert engine == "vultr"
     assert stories[0]["title"] == "Implement Okta SSO integration"
     assert stories[0]["size"] == "M"
+    assert mock_chat.await_args.kwargs["enable_thinking"] is False
     user_msg = mock_chat.await_args.kwargs["messages"][1]["content"]
     assert "SUPERVISOR REDIRECT" in user_msg
 
@@ -102,3 +107,17 @@ def test_parse_llm_json_strips_fences():
     raw = 'Here is JSON:\n```json\n{"risks": []}\n```'
     parsed = llm_tools._parse_llm_json(raw)
     assert parsed == {"risks": []}
+
+
+@pytest.mark.asyncio
+async def test_score_risks_llm_falls_back_on_malformed_json():
+    requirements = [{"id": "REQ-001", "text": "Must implement SSO.", "source_section": "Auth", "source_id": "s1"}]
+    with patch("app.tools.llm_tools.settings.vultr_api_key", "test-key"):
+        with patch(
+            "app.tools.llm_tools.vultr.chat_completion", new_callable=AsyncMock, return_value="not json at all"
+        ):
+            risks, engine, meta = await llm_tools.score_risks_llm(requirements, masked_text="SSO")
+
+    assert engine == "deterministic_fallback"
+    assert "llm_error" in meta["reason"]
+    assert len(risks) == 1

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from collections.abc import AsyncGenerator
 from typing import Any
 from uuid import uuid4
@@ -65,6 +66,24 @@ def _find_precedent(session_id: str, blocked_decision: str) -> Precedent | None:
     for p in session.precedents:
         if p.blocked_decision.lower() == blocked_decision.lower():
             return p
+    return None
+
+
+_PAYMENT_KEYWORDS = ("payment", "subscription", "one-time", "license", "billing")
+
+
+def _payment_escalation_evidence(
+    risks: list[dict[str, Any]], requirements: list[dict[str, Any]]
+) -> str | None:
+    """Use the LLM-scored risk signal (Vultr or its deterministic fallback) to detect
+    payment-model escalation, as a second signal alongside the regex match on raw text."""
+    req_by_id = {r["id"]: r for r in requirements}
+    for risk in risks:
+        if not risk.get("triggers_escalation"):
+            continue
+        text = req_by_id.get(risk.get("requirement_id"), {}).get("text", "")
+        if any(keyword in text.lower() for keyword in _PAYMENT_KEYWORDS):
+            return text.strip()[:200] or str(risk.get("justification", ""))
     return None
 
 
@@ -204,13 +223,22 @@ def _format_precedents_for_plan(session_id: str) -> tuple[list[dict[str, str]], 
     return items, "\n".join(lines)
 
 
+def _strip_json_fences(text: str) -> str:
+    """Strip ```json ... ``` fences the model sometimes wraps output in, mirroring
+    llm_tools._parse_llm_json's fence-stripping (that helper only accepts JSON objects; the
+    plan's output is a JSON array, so it needs its own small parser)."""
+    text = text.strip()
+    fence = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
+    return fence.group(1).strip() if fence else text
+
+
 async def _generate_plan_steps(
     masked_text: str,
     session_id: str,
     *,
     note: str | None,
     revision: int,
-) -> list[str]:
+) -> tuple[list[str], str]:
     plan_steps = [
         "Analyze RFP structure and identify requirement sections",
         "Retrieve context for SSO / authentication epic (Okta, SOX)",
@@ -231,34 +259,36 @@ async def _generate_plan_steps(
 
     _precedent_items, precedent_text = _format_precedents_for_plan(session_id)
 
-    if settings.vultr_api_key:
-        try:
-            plan_user = f"Plan PRD generation for this brief:\n{masked_text[:3000]}"
-            if precedent_text:
-                plan_user += f"\n\n{precedent_text}"
-            if note:
-                plan_user += f"\n\nSupervisor rejected the prior draft. Correction required: {note}"
-            llm_plan = await vultr.chat_completion(
-                model=settings.vultr_executor_model,
-                messages=[
-                    {"role": "system", "content": "You are a Planner agent. Output a JSON array of 4-6 plan step strings."},
-                    {"role": "user", "content": plan_user},
-                ],
-            )
-            try:
-                parsed = json.loads(llm_plan)
-                if isinstance(parsed, list):
-                    llm_steps = [str(s) for s in parsed]
-                    if note:
-                        plan_steps = plan_steps[:2] + llm_steps
-                    else:
-                        plan_steps = llm_steps
-            except json.JSONDecodeError:
-                pass
-        except Exception:
-            pass
+    engine = "deterministic_fallback"
+    if not settings.vultr_api_key:
+        return plan_steps, engine
 
-    return plan_steps
+    try:
+        plan_user = f"Plan PRD generation for this brief:\n{masked_text[:3000]}"
+        if precedent_text:
+            plan_user += f"\n\n{precedent_text}"
+        if note:
+            plan_user += f"\n\nSupervisor rejected the prior draft. Correction required: {note}"
+        llm_plan = await vultr.chat_completion(
+            model=settings.vultr_executor_model,
+            messages=[
+                {"role": "system", "content": "You are a Planner agent. Output a JSON array of 4-6 plan step strings."},
+                {"role": "user", "content": plan_user},
+            ],
+            enable_thinking=False,
+        )
+        try:
+            parsed = json.loads(_strip_json_fences(llm_plan))
+            if isinstance(parsed, list) and parsed:
+                llm_steps = [str(s) for s in parsed]
+                plan_steps = plan_steps[:2] + llm_steps if note else llm_steps
+                engine = "vultr"
+        except json.JSONDecodeError:
+            pass
+    except Exception:
+        pass
+
+    return plan_steps, engine
 
 
 async def _run_critic(prd: dict[str, Any], cycle_id: str) -> tuple[list[TraceEvent], dict[str, Any]]:
@@ -274,20 +304,25 @@ async def _run_critic(prd: dict[str, Any], cycle_id: str) -> tuple[list[TraceEve
     if _payment_is_resolved(prd):
         resolution = prd.get("payment_model_resolution") or {}
         resolution_note = (
-            f" PAYMENT MODEL ALREADY RESOLVED: {resolution.get('choice', prd.get('payment_model_decision'))} "
-            f"via {resolution.get('via', 'escalation/precedent')}. Do NOT flag payment ambiguity as unresolved."
+            f" DECISION ALREADY RESOLVED: {resolution.get('choice', prd.get('payment_model_decision'))} "
+            f"via {resolution.get('via', 'escalation/precedent')}. Do NOT flag this decision as unresolved ambiguity."
         )
 
     # LLM critic if configured
     if settings.vultr_api_key:
         try:
             prompt = (
-                "Review this PRD draft against the acceptance contract. "
-                f"Contract: {json.dumps(ACCEPTANCE_CONTRACT)}. "
-                f"PRD: {json.dumps(prd)[:6000]}. "
+                "Review this PRD draft strictly against the acceptance contract below. "
+                f"Acceptance contract (authoritative — every clause must be satisfied): {json.dumps(ACCEPTANCE_CONTRACT)}. "
+                f"PRD draft: {json.dumps(prd)[:6000]}. "
                 f"{resolution_note} "
-                "List any contract violations as bullet points. Be strict about deadline Q3 2026 vs Q1 2027. "
-                "If payment_model_decision or payment_model_resolution is present, payment ambiguity is satisfied."
+                "Evaluate each contract clause against the draft, one clause at a time. "
+                "Cross-check every date, deadline, numeric commitment, and stated decision in the draft "
+                "against the corresponding clause in the contract above; flag any value that contradicts "
+                "the contract, and flag any clause the draft leaves unresolved. "
+                "If a decision a clause requires has already been resolved in the draft (a matching "
+                "decision or resolution field is present), treat that clause as satisfied and do not re-flag it. "
+                "List each contract violation as one short bullet point. If there are no violations, return an empty list."
             )
             reply = await vultr.chat_completion(
                 model=settings.vultr_critic_model,
@@ -296,6 +331,11 @@ async def _run_critic(prd: dict[str, Any], cycle_id: str) -> tuple[list[TraceEve
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.1,
+                # Explicit (not left unset): the Critic's job is open-ended judgment (spot subtle
+                # contract violations), unlike the executor's rubric-driven scoring, so it keeps
+                # deliberation — but explicit True still avoids the uncontrolled/unbounded
+                # reasoning mode that an unset parameter falls back to on this model family.
+                enable_thinking=True,
             )
             try:
                 parsed = json.loads(reply)
@@ -333,6 +373,7 @@ async def _run_critic(prd: dict[str, Any], cycle_id: str) -> tuple[list[TraceEve
                 "findings": findings,
                 "completion_report": completion_report,
                 "model": settings.vultr_critic_model,
+                "engine": "vultr" if settings.vultr_api_key else "deterministic_fallback",
             },
         )
     )
@@ -509,8 +550,15 @@ async def _execute_from_plan(
         prd["epics"] = epics
         prd["stories"] = stories
     prd = _inject_planted_error(prd)
+    if note:
+        # A supervisor redirect note means the executor is re-running specifically to address
+        # human feedback — apply the correction now, as a visible consequence of that feedback,
+        # instead of silently auto-fixing it before the critic ever sees the draft.
+        prd = _correct_planted_deadline(prd)
 
     ambiguity = tools.detect_planted_ambiguity(masked_text)
+    llm_evidence = _payment_escalation_evidence(risks, requirements)
+    evidence = ambiguity["evidence"] if ambiguity else llm_evidence
     blocked = "Payment model for the licensing module"
     precedent = _find_precedent(session_id, blocked)
 
@@ -526,8 +574,8 @@ async def _execute_from_plan(
                 "precedent": precedent.__dict__,
             },
         )
-    elif ambiguity:
-        payload = _build_escalation(ambiguity["evidence"])
+    elif evidence:
+        payload = _build_escalation(evidence)
         token = str(uuid4())
         session.cycles[token] = CycleState(
             cycle_id=cycle_id,
@@ -548,7 +596,6 @@ async def _execute_from_plan(
         )
         return
 
-    prd = _correct_planted_deadline(prd)
     critic_events, prd = await _run_critic(prd, cycle_id)
     for ev in critic_events:
         yield ev
@@ -633,7 +680,8 @@ async def run_cycle_stream(
                     {"selected": option_id, "resume_token": resume_token},
                 )
             )
-            prd = _correct_planted_deadline(prd)
+            if note:
+                prd = _correct_planted_deadline(prd)
             critic_events, prd = await _run_critic(prd, cycle_id)
             for ev in critic_events:
                 yield sse(ev)
@@ -654,7 +702,7 @@ async def run_cycle_stream(
             )
         )
 
-    plan_steps = await _generate_plan_steps(masked_text, session_id, note=note, revision=session.revision)
+    plan_steps, plan_engine = await _generate_plan_steps(masked_text, session_id, note=note, revision=session.revision)
 
     token = str(uuid4())
     session.cycles[token] = CycleState(
@@ -675,6 +723,7 @@ async def run_cycle_stream(
             "Execution plan proposed — awaiting supervisor approval",
             {
                 "steps": plan_steps,
+                "engine": plan_engine,
                 "revision": session.revision,
                 "supervisor_note": note,
                 "pending_approval": True,

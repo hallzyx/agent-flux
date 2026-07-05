@@ -29,11 +29,24 @@ Thumbs.db
 # Demo cache (optional local)
 backend/app/demo_cache/*.json
 
-# Local hackathon docs (private) — product/dev specs tracked
-local/*
-!local/PRODUCTO.md
-!local/DESARROLLO.md
+# Internal design docs (private working notes) — public design log + screenshots tracked
+docs/*
+!docs/product.md
+!docs/build_order.md
+!docs/assets/
+!docs/assets/*
+
+# Official third-party hackathon rules copy — not our documentation
+docs/hackathon_data.md
 
 # Gemma on-device model weights (large, gated) — keep the folder README only
 frontend/public/models/*
 !frontend/public/models/README.md
+
+# Submission-form content (pasted manually into the hackathon form, not part of the repo)
+SUBMISSION.md
+
+# Tooling artifacts (Cursor sub-agent skill cache, Playwright MCP output, TS build info)
+.atl/
+.playwright-mcp/
+frontend/tsconfig.tsbuildinfo
