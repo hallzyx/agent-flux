@@ -24,7 +24,10 @@ export async function writeCachedModel(modelUrl: string, bytes: Uint8Array): Pro
     const dir = await root.getDirectoryHandle(CACHE_DIR, { create: true });
     const handle = await dir.getFileHandle(cacheFileName(modelUrl), { create: true });
     const writable = await handle.createWritable();
-    await writable.write(bytes);
+    // TS's Uint8Array<ArrayBufferLike> (which includes SharedArrayBuffer) is stricter than
+    // what OPFS's write() actually requires; this is always a plain ArrayBuffer-backed view
+    // at runtime (built via `new Uint8Array(...)` above/upstream), so BufferSource is accurate.
+    await writable.write(bytes as BufferSource);
     await writable.close();
   } catch {
     // OPFS unavailable — skip cache write

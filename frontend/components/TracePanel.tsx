@@ -84,7 +84,7 @@ export function TracePanel({ events, running, mode = "expanded" }: TracePanelPro
                 )}
               </p>
             )}
-            {ev.type === "critic" && ev.data.completion_report && (
+            {ev.type === "critic" && !!ev.data.completion_report && (
               <p className="completion-summary">
                 {(() => {
                   const s = (ev.data.completion_report as { summary: { met: number; total: number } }).summary;

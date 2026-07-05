@@ -6,10 +6,10 @@ From messy client brief to execution-ready PRD in minutes — a human-supervised
 
 This repo contains:
 - **[framework-docs/](framework-docs/)** — the Agent Flux methodology (public canon, not modified for the demo)
-- **`frontend/`** — Next.js app (upload, pseudonymization, boundary review, trace UI)
-- **`backend/`** — FastAPI Flux Cycle orchestrator (Plan → Execute → Checkpoint → Critic → Validate)
+- **[frontend/](frontend/)** — Next.js app (upload, pseudonymization, boundary review, trace UI)
+- **[backend/](backend/)** — FastAPI Flux Cycle orchestrator (Plan → Execute → Checkpoint → Critic → Validate)
 - **[docs/](docs/)** — internal design log (product scope, build order with a hardening/bugfix history), published for transparency
-- `docker-compose.yml` — one-command local run for both services (see below)
+- [`docker-compose.yml`](docker-compose.yml) — one-command local run for both services (see below)
 
 ## Quick start
 
@@ -78,14 +78,14 @@ Run the demo brief **twice** in the same session (via "Run again") to see **prec
 
 | Concern | File |
 |---|---|
-| Agent orchestration, escalation trigger, plan/critic pipeline | `backend/app/cycle/orchestrator.py` |
-| LLM prompts (risk scoring, effort estimation) | `backend/app/tools/llm_tools.py` |
-| Vultr client, `enable_thinking` handling | `backend/app/llm/vultr.py` |
-| Clause-by-clause completion report (Slippage Protocol) | `backend/app/cycle/completion_report.py` |
-| Deterministic fallbacks + golden-fixture helpers | `backend/app/tools/deterministic.py` |
-| On-device pseudonymization (Gemma + regex fallback) | `frontend/lib/privacy/` |
-| Trace panel + Vultr engine badges | `frontend/components/TracePanel.tsx` |
-| Main supervisor UI flow | `frontend/app/page.tsx` |
+| Agent orchestration, escalation trigger, plan/critic pipeline | [`backend/app/cycle/orchestrator.py`](backend/app/cycle/orchestrator.py) |
+| LLM prompts (risk scoring, effort estimation) | [`backend/app/tools/llm_tools.py`](backend/app/tools/llm_tools.py) |
+| Vultr client, `enable_thinking` handling | [`backend/app/llm/vultr.py`](backend/app/llm/vultr.py) |
+| Clause-by-clause completion report (Slippage Protocol) | [`backend/app/cycle/completion_report.py`](backend/app/cycle/completion_report.py) |
+| Deterministic fallbacks + golden-fixture helpers | [`backend/app/tools/deterministic.py`](backend/app/tools/deterministic.py) |
+| On-device pseudonymization (Gemma + regex fallback) | [`frontend/lib/privacy/`](frontend/lib/privacy/) |
+| Trace panel + Vultr engine badges | [`frontend/components/TracePanel.tsx`](frontend/components/TracePanel.tsx) |
+| Main supervisor UI flow | [`frontend/app/page.tsx`](frontend/app/page.tsx) |
 
 ## Architecture
 

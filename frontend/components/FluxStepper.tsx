@@ -16,12 +16,12 @@ interface FluxStepperProps {
 }
 
 const STEPS = [
-  { key: "upload", label: "Upload" },
-  { key: "boundary", label: "Boundary" },
-  { key: "plan", label: "Plan" },
+  { key: "upload", label: "Upload", optional: false },
+  { key: "boundary", label: "Boundary", optional: false },
+  { key: "plan", label: "Plan", optional: false },
   { key: "escalation", label: "Escalation", optional: true },
-  { key: "validate", label: "Validate" },
-  { key: "done", label: "Done" },
+  { key: "validate", label: "Validate", optional: false },
+  { key: "done", label: "Done", optional: false },
 ] as const;
 
 function activeIndex(step: Step): number {
