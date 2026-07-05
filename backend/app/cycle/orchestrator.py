@@ -129,7 +129,7 @@ def _inject_planted_error(prd: dict[str, Any]) -> dict[str, Any]:
     """Seed the critic-catching error in phase 2 epic."""
     prd = dict(prd)
     epics = list(prd.get("epics", []))
-    for epic in epics:
+    for i, epic in enumerate(epics):
         if epic.get("id") == "EPIC-02" or "phase 2" in epic.get("title", "").lower():
             stories = list(epic.get("stories", []))
             if stories:
@@ -139,7 +139,49 @@ def _inject_planted_error(prd: dict[str, Any]) -> dict[str, Any]:
                 stories[0] = bad
                 epic = dict(epic)
                 epic["stories"] = stories
+                epics[i] = epic
     prd["epics"] = epics
+    return prd
+
+
+def _correct_planted_deadline(prd: dict[str, Any]) -> dict[str, Any]:
+    """Executor self-correction — align phase 2 deadline with contract before validation."""
+    prd = dict(prd)
+
+    def _fix_story(story: dict[str, Any]) -> dict[str, Any]:
+        story = dict(story)
+        title = story.get("title", "")
+        if "Q1 2027" in title or "PLANTED_ERROR" in title:
+            title = (
+                title.replace(" PLANTED_ERROR", "")
+                .replace("— deadline Q1 2027", "")
+                .replace("deadline Q1 2027", "")
+                .replace("Q1 2027", "Q3 2026")
+                .strip(" —")
+            )
+            if "Q3 2026" not in title:
+                title = f"{title} — target Q3 2026" if title else "Phase 2 delivery — target Q3 2026"
+            story["title"] = title
+        criteria: list[str] = []
+        for c in story.get("criteria", []):
+            text = str(c).replace("Q1 2027", "Q3 2026")
+            if text not in criteria:
+                criteria.append(text)
+        if criteria and not any("Q3 2026" in str(c) for c in criteria):
+            criteria.append("Deliver by Q3 2026")
+        story["criteria"] = criteria
+        return story
+
+    epics = []
+    for epic in prd.get("epics", []):
+        epic = dict(epic)
+        epic["stories"] = [_fix_story(s) for s in epic.get("stories", [])]
+        epics.append(epic)
+    prd["epics"] = epics
+
+    if prd.get("stories"):
+        prd["stories"] = [_fix_story(s) for s in prd["stories"]]
+
     return prd
 
 
@@ -506,6 +548,7 @@ async def _execute_from_plan(
         )
         return
 
+    prd = _correct_planted_deadline(prd)
     critic_events, prd = await _run_critic(prd, cycle_id)
     for ev in critic_events:
         yield ev
@@ -590,6 +633,7 @@ async def run_cycle_stream(
                     {"selected": option_id, "resume_token": resume_token},
                 )
             )
+            prd = _correct_planted_deadline(prd)
             critic_events, prd = await _run_critic(prd, cycle_id)
             for ev in critic_events:
                 yield sse(ev)

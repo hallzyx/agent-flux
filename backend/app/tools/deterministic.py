@@ -235,14 +235,13 @@ def detect_planted_ambiguity(masked_text: str) -> dict[str, str] | None:
 
 
 def detect_planted_error(prd: dict[str, Any]) -> str | None:
-    """The golden fixture seeds a wrong deadline in epic 2 — critic should catch."""
+    """The golden fixture seeds a wrong deadline in phase 2 — critic should catch."""
     for epic in prd.get("epics", []):
         if "PHASE_2" in epic.get("title", "") or "phase 2" in epic.get("title", "").lower():
             for story in epic.get("stories", []):
                 if "Q1 2027" in story.get("title", "") or "Q1 2027" in str(story.get("criteria", [])):
                     return f"Story '{story['title']}' references Q1 2027 but brief specifies Q3 2026 for phase 2"
-    # Also check for explicit planted error marker
-    prd_str = str(prd)
-    if "PLANTED_ERROR" in prd_str or "Q1 2027" in prd_str:
-        return "Deadline mismatch: Q1 2027 cited but acceptance contract requires Q3 2026 for phase 2"
+    for story in prd.get("stories", []):
+        if "Q1 2027" in story.get("title", "") or "PLANTED_ERROR" in story.get("title", ""):
+            return f"Story '{story.get('title', '')}' references Q1 2027 but brief specifies Q3 2026 for phase 2"
     return None

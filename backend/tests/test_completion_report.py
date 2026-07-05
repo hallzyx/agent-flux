@@ -36,10 +36,13 @@ def test_completion_report_met_when_clean():
         ],
         "risks": [{"requirement_id": "REQ-001", "justification": "ok", "overall_score": 0.3}],
         "payment_model_resolution": {"choice": "Subscription", "via": "precedent"},
+        "acceptance_contract": ACCEPTANCE_CONTRACT,
     }
     report = build_completion_report(prd, ACCEPTANCE_CONTRACT)
     assert report["summary"]["met"] >= 5
     assert report["summary"]["unmet"] == 0
+    deadline = next(r for r in report["clauses"] if "Q3 2026" in r["clause"])
+    assert deadline["status"] == "met"
 
 
 def test_completion_report_payment_unmet_without_resolution():

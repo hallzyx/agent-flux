@@ -40,7 +40,13 @@ def _risks_scored(prd: dict[str, Any]) -> tuple[bool, str]:
 
 
 def _deadline_clause(prd: dict[str, Any]) -> tuple[ClauseStatus, str]:
-    blob = json.dumps(prd)
+    """Check draft content only — exclude acceptance_contract (it mentions Q1 2027 by design)."""
+    payload = {
+        k: prd.get(k)
+        for k in ("epics", "stories", "requirements", "title", "export", "decisions")
+        if prd.get(k) is not None
+    }
+    blob = json.dumps(payload)
     if "Q1 2027" in blob or "PLANTED_ERROR" in blob:
         return "unmet", "Draft references Q1 2027; contract requires Q3 2026 for phase 2"
     if "Q3 2026" in blob:
