@@ -16,6 +16,8 @@ The initial screen shows the **Acceptance Contract** up front — the 6 clauses 
 
 Original text (left) vs. pseudonymized text (right), side by side. Real entities — client name, law firm, budget, dates — are only visible on the left; the right side is what would actually leave the device, with typed placeholders (`[CLIENT_1]`, `[BUDGET_1]`, etc.). Nothing is sent until **Approve & send masked text** is clicked. This is the literal implementation of the framework's privacy boundary, not a diagram.
 
+The actual masking here is done by **Gemma 3 (270M, quantized), running entirely in the browser via MediaPipe** — the `Privacy: on-device ✓` pill confirms it was active (not the fallback) for this exact run. A deterministic regex pass runs alongside it as a safety net for structured patterns (emails, dates, amounts) Gemma might miss — a backup layer, not the primary mechanism. See [`frontend/lib/privacy/`](frontend/lib/privacy/).
+
 ## 3. Plan approval
 
 ![Plan approval screen](docs/assets/walkthrough/03-plan.png)
@@ -54,7 +56,29 @@ The full trace of both passes, with an engine badge on every LLM-backed step. Tw
 - **`local`** — this step is deterministic *by design* (e.g. `extract_requirements`, a regex baseline) and never calls Vultr at all. Not a fallback, just not an LLM step.
 - **`Vultr`** — this step's LLM call to Vultr Serverless Inference succeeded. In this run, every LLM-backed tool call succeeded on Vultr, including `score_risks_llm` on both passes (see `VERIFICATION.md`'s note on why this specific call sometimes falls back on a large batch, and how it's mitigated).
 
-The Critic badge also shows the actual model name — `nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-BF16` — confirming which NVIDIA model reviewed the draft, not just that "an LLM" did. Export produces `prd.md` and `prd-jira.json`, both correctly named (not extension-less UUIDs — see `VERIFICATION.md` for why that used to be a real bug and how it's fixed).
+### What each tool actually does — the four calls between Plan and Escalation
+
+This is the part that makes it an agent rather than a single prompt-and-answer, and each of the four tool calls in the trace corresponds to one of these, in order:
+
+| Tool | Engine | What it does |
+|---|---|---|
+| `extract_requirements` | `local` | Deterministic regex pass over the masked brief — segments it into atomic, ID'd requirements. The auditable baseline every later step builds on. |
+| `extract_requirements_llm` | `Vultr` | The Executor (`Nemotron-Cascade-2-30B-A3B`) re-reads the brief and adds up to 3 requirements the regex pass missed — genuine enrichment, not a rerun. |
+| `score_risks_llm` | `Vultr` | The Executor scores every requirement for ambiguity, external dependency, and technical complexity, one call per requirement (run concurrently — see `VERIFICATION.md` for why batching them into one call used to fail). This is also where `triggers_escalation` comes from — the second, LLM-driven signal behind the escalation in phase 4. |
+| `estimate_effort_llm` | `Vultr` | The Executor turns each requirement + its risk score into a sized user story (S/M/L/XL) with acceptance criteria. |
+
+Then the Critic (a separate model, `Nemotron-3-Nano-Omni-30B-A3B-Reasoning-BF16`) reviews the assembled PRD against the acceptance contract — that's phase 5/7. Four distinct tool calls, a plan that decided to make them, and a human checkpoint before and after — not one call to one model.
+
+The Critic badge also shows the actual model name — confirming which NVIDIA model reviewed the draft, not just that "an LLM" did. Export produces `prd.md` and `prd-jira.json`, both correctly named (not extension-less UUIDs — see `VERIFICATION.md` for why that used to be a real bug and how it's fixed).
+
+### Two different Nemotron models, one per role — by methodology, not by accident
+
+The Executor (`Nemotron-Cascade-2-30B-A3B`) and the Critic (`Nemotron-3-Nano-Omni-30B-A3B-Reasoning-BF16`) are deliberately different NVIDIA models, each doing the job it's specialized for: the Executor drafts under the plan, the Critic adversarially reviews that draft against the contract before any human sees it. This isn't an implementation detail — it's a direct requirement from the Agent Flux methodology itself:
+
+> "One requirement is structural: **the critic must not share the executor's blind spots** — it runs on a different model, or at minimum a deliberately different configuration and instruction set, because a reviewer that thinks identically to the author approves the author's mistakes."
+> — [`framework-docs/03-roles.md`](framework-docs/03-roles.md)
+
+Phase 5 is the proof this isn't cosmetic: the Executor's own output (the planted Q1 2027 deadline) is exactly what the differently-configured Critic model catches. Same organization, two roles, two NVIDIA models.
 
 ---
 
