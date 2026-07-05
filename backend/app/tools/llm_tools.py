@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from typing import Any
@@ -170,6 +171,48 @@ def _supervisor_clause(supervisor_note: str | None) -> str:
     return f"\n\nSUPERVISOR REDIRECT (revision context — prioritize in scoring/sizing):\n{supervisor_note}"
 
 
+async def _score_one_risk_llm(
+    requirement: dict[str, Any],
+    *,
+    masked_text: str,
+    supervisor_note: str | None,
+    contract: list[str],
+) -> dict[str, Any]:
+    """Score a single requirement.
+
+    Batching all requirements into one call reliably hits a hard output-length ceiling on the
+    executor model — confirmed against the live API with the real demo brief: the model writes
+    correct JSON for 8/9 requirements and gets cut (finish_reason=length) one field short of
+    closing the 9th, at exactly 1024 completion tokens regardless of a higher max_tokens request.
+    Scoring one requirement per call keeps the required output far under that ceiling.
+    """
+    user_payload = {
+        "requirements": [requirement],
+        "brief_excerpt": masked_text[:2000],
+        "acceptance_contract": contract,
+    }
+    reply = await vultr.chat_completion(
+        model=settings.vultr_executor_model,
+        messages=[
+            {"role": "system", "content": SCORE_RISKS_SYSTEM},
+            {
+                "role": "user",
+                "content": (
+                    f"Score risks for these requirements:\n{json.dumps(user_payload, indent=2)}"
+                    f"{_supervisor_clause(supervisor_note)}"
+                ),
+            },
+        ],
+        temperature=0.1,
+        max_tokens=2048,
+        enable_thinking=False,
+    )
+    parsed = _parse_llm_json(reply)
+    if not parsed or not isinstance(parsed.get("risks"), list) or not parsed["risks"]:
+        raise ValueError(f"invalid LLM JSON for score_risks ({requirement['id']})")
+    return _normalize_risks(parsed["risks"], [requirement])[0]
+
+
 async def score_risks_llm(
     requirements: list[dict[str, Any]],
     *,
@@ -178,14 +221,9 @@ async def score_risks_llm(
     acceptance_contract: list[str] | None = None,
 ) -> tuple[list[dict[str, Any]], str, dict[str, Any]]:
     """
-    Score risks via Vultr LLM with reinforcement prompting.
-    Returns (risks, engine, meta) where engine is 'vultr' or 'deterministic_fallback'.
-
-    enable_thinking=False: this prompt's HARD RULES already spell out the exact scoring logic
-    (e.g. "payment ambiguity -> ambiguity >= 0.85"), so the model doesn't need to deliberate — it
-    just applies the rubric. Confirmed empirically that leaving the reasoning phase on made the
-    executor model (a Vultr reasoning model) spend its whole token budget on chain-of-thought and
-    hit finish_reason=length before ever writing the JSON answer, on this exact prompt/model.
+    Score risks via Vultr LLM, one requirement per call (run concurrently) with a reinforcement
+    prompt. Returns (risks, engine, meta) where engine is 'vultr' (all items scored by the LLM),
+    'partial' (some items fell back per-item), or 'deterministic_fallback' (none did, or no API key).
     """
     meta: dict[str, Any] = {"prompt_version": PROMPT_VERSION, "tool": "score_risks_llm"}
     if not settings.vultr_api_key:
@@ -194,39 +232,33 @@ async def score_risks_llm(
         return risks, "deterministic_fallback", meta
 
     contract = acceptance_contract or []
-    user_payload = {
-        "requirements": requirements,
-        "brief_excerpt": masked_text[:2000],
-        "acceptance_contract": contract,
-    }
-    try:
-        reply = await vultr.chat_completion(
-            model=settings.vultr_executor_model,
-            messages=[
-                {"role": "system", "content": SCORE_RISKS_SYSTEM},
-                {
-                    "role": "user",
-                    "content": (
-                        f"Score risks for these requirements:\n{json.dumps(user_payload, indent=2)}"
-                        f"{_supervisor_clause(supervisor_note)}"
-                    ),
-                },
-            ],
-            temperature=0.1,
-            max_tokens=2048,
-            enable_thinking=False,
-        )
-        parsed = _parse_llm_json(reply)
-        if not parsed or not isinstance(parsed.get("risks"), list):
-            raise ValueError("invalid LLM JSON for score_risks")
-        risks = _normalize_risks(parsed["risks"], requirements)
-        meta["raw_count"] = len(parsed["risks"])
-        meta["reinforcement"] = ["role_task", "json_schema", "hard_rules", "formula", "few_shot", "contract_context"]
-        return risks, "vultr", meta
-    except Exception as exc:
-        risks = det.score_risks(requirements)
-        meta["reason"] = f"llm_error: {exc}"
-        return risks, "deterministic_fallback", meta
+    results = await asyncio.gather(
+        *(
+            _score_one_risk_llm(req, masked_text=masked_text, supervisor_note=supervisor_note, contract=contract)
+            for req in requirements
+        ),
+        return_exceptions=True,
+    )
+
+    risks: list[dict[str, Any]] = []
+    fallback_ids: list[str] = []
+    for req, result in zip(requirements, results):
+        if isinstance(result, Exception):
+            risks.append(det.score_risks([req])[0])
+            fallback_ids.append(req["id"])
+        else:
+            risks.append(result)
+
+    if not fallback_ids:
+        engine = "vultr"
+    elif len(fallback_ids) == len(requirements):
+        engine = "deterministic_fallback"
+        meta["reason"] = "all_items_failed"
+    else:
+        engine = "partial"
+        meta["reason"] = f"fell back for {len(fallback_ids)}/{len(requirements)} requirements: {fallback_ids}"
+    meta["reinforcement"] = ["role_task", "json_schema", "hard_rules", "formula", "few_shot", "contract_context"]
+    return risks, engine, meta
 
 
 async def estimate_effort_llm(

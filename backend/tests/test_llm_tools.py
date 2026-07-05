@@ -40,7 +40,11 @@ async def test_score_risks_llm_parses_reinforced_response():
     assert meta["prompt_version"] == llm_tools.PROMPT_VERSION
     assert len(risks) == len(requirements)
     assert any(r["triggers_escalation"] for r in risks)
-    mock_chat.assert_awaited_once()
+    # One call per requirement (not one batched call) — batching all requirements into a single
+    # call reliably hit a hard output-length ceiling on the executor model with the real demo
+    # brief (confirmed against the live API: cut one field short of closing the last item, at
+    # exactly 1024 completion tokens regardless of a higher max_tokens request).
+    assert mock_chat.await_count == len(requirements)
     # enable_thinking=False: the HARD RULES already spell out the rubric, so the model doesn't
     # need to deliberate — and leaving this unset made the executor model burn its token budget
     # on chain-of-thought and never emit the JSON answer (confirmed against the live API).
@@ -103,6 +107,44 @@ async def test_score_risks_llm_falls_back_without_api_key():
     assert len(risks) >= 1
 
 
+@pytest.mark.asyncio
+async def test_score_risks_llm_reports_partial_when_one_requirement_fails():
+    requirements = [
+        {"id": "REQ-001", "text": "Must implement SSO.", "source_section": "Auth", "source_id": "s1"},
+        {"id": "REQ-002", "text": "Payment model ambiguous.", "source_section": "Billing", "source_id": "s2"},
+    ]
+    good_reply = json.dumps(
+        {
+            "risks": [
+                {
+                    "requirement_id": "REQ-001",
+                    "ambiguity": 0.2,
+                    "external_dependency": 0.6,
+                    "technical_complexity": 0.3,
+                    "overall_score": 0.35,
+                    "justification": "SSO integration",
+                    "triggers_escalation": False,
+                }
+            ]
+        }
+    )
+
+    async def flaky_chat(*, messages, **_kwargs):
+        user_msg = messages[1]["content"]
+        if "REQ-002" in user_msg:
+            raise RuntimeError("simulated output-length cutoff")
+        return good_reply
+
+    with patch("app.tools.llm_tools.settings.vultr_api_key", "test-key"):
+        with patch("app.tools.llm_tools.vultr.chat_completion", new_callable=AsyncMock, side_effect=flaky_chat):
+            risks, engine, meta = await llm_tools.score_risks_llm(requirements, masked_text="SSO, payment ambiguous")
+
+    assert engine == "partial"
+    assert len(risks) == 2
+    assert "REQ-002" in meta["reason"]
+    assert any(r["requirement_id"] == "REQ-002" for r in risks)
+
+
 def test_parse_llm_json_strips_fences():
     raw = 'Here is JSON:\n```json\n{"risks": []}\n```'
     parsed = llm_tools._parse_llm_json(raw)
@@ -119,5 +161,5 @@ async def test_score_risks_llm_falls_back_on_malformed_json():
             risks, engine, meta = await llm_tools.score_risks_llm(requirements, masked_text="SSO")
 
     assert engine == "deterministic_fallback"
-    assert "llm_error" in meta["reason"]
+    assert meta["reason"] == "all_items_failed"
     assert len(risks) == 1
