@@ -4,8 +4,10 @@ From messy client brief to execution-ready PRD in minutes — a human-supervised
 
 > **Judging this submission remotely?** The project description is in the hackathon's own submission form. Start here with [`VERIFICATION.md`](VERIFICATION.md) for exact file/line pointers proving the escalation, the Critic catch, and the Vultr usage are genuine rather than staged.
 
+**Why this demo exists:** it's the reference implementation of **Agent Flux**, our original proposal for an agile methodology for teams where AI agents execute and humans supervise — replacing the 2-week sprint with the *Flux Cycle* (Frame → Plan → Execute → Checkpoint → Validate → Integrate) and Scrum ceremonies with auto-generated, human-checkpointed artifacts. Every checkpoint you'll see in the app (boundary review, plan approval, escalation, critic, validate/redirect) is a direct implementation of a concept from that proposal, not UI flavor. Reading [`framework-docs/README.md`](framework-docs/README.md) first is the fastest way to understand *why* the demo is built the way it is.
+
 This repo contains:
-- **[framework-docs/](framework-docs/)** — the Agent Flux methodology (public canon, not modified for the demo)
+- **[framework-docs/](framework-docs/)** — our original methodology proposal (9 docs), written independently of this demo
 - **[frontend/](frontend/)** — Next.js app (upload, pseudonymization, boundary review, trace UI)
 - **[backend/](backend/)** — FastAPI Flux Cycle orchestrator (Plan → Execute → Checkpoint → Critic → Validate)
 - **[docs/](docs/)** — internal design log (product scope, build order with a hardening/bugfix history), published for transparency
