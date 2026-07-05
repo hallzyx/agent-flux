@@ -2,7 +2,7 @@
 
 From messy client brief to execution-ready PRD in minutes — a human-supervised agent pipeline where **sensitive data never leaves your device** unmasked.
 
-> **Judging this submission remotely?** The project description is in the hackathon's own submission form. Start here with [`VERIFICATION.md`](VERIFICATION.md) for exact file/line pointers proving the escalation, the Critic catch, and the Vultr usage are genuine rather than staged.
+> **Judging this submission remotely?** The project description is in the hackathon's own submission form. See [`WALKTHROUGH.md`](WALKTHROUGH.md) for a screenshot of every phase of the cycle in sequence, and [`VERIFICATION.md`](VERIFICATION.md) for exact file/line pointers proving the escalation, the Critic catch, and the Vultr usage are genuine rather than staged.
 
 **Why this demo exists:** it's the reference implementation of **Agent Flux**, our original proposal for an agile methodology for teams where AI agents execute and humans supervise — replacing the 2-week sprint with the *Flux Cycle* (Frame → Plan → Execute → Checkpoint → Validate → Integrate) and Scrum ceremonies with auto-generated, human-checkpointed artifacts. Every checkpoint you'll see in the app (boundary review, plan approval, escalation, critic, validate/redirect) is a direct implementation of a concept from that proposal, not UI flavor. Reading [`framework-docs/README.md`](framework-docs/README.md) first is the fastest way to understand *why* the demo is built the way it is.
 
@@ -66,15 +66,7 @@ Same two services, same ports — `docker-compose.yml` wires them together for a
 
 Run the demo brief **twice** in the same session (via "Run again") to see **precedent applied** (no second escalation).
 
-### What a judge should actually see
-
-<img src="docs/assets/validate-5-of-6.png" alt="Validate screen showing 5/6 clauses met, with the Phase 2 deadline clause marked Unmet and genuine Critic findings naming the exact planted error" width="800">
-
-*First Validate pass: the Critic genuinely caught the planted deadline error — this is the moment the Redirect loop exists to fix, not a scripted 6/6.*
-
-<img src="docs/assets/trace-panel-vultr-badges.png" alt="Flux Cycle trace panel showing per-step engine badges: Vultr, local fallback, and local, next to each tool call and the Critic" width="800">
-
-*Every LLM-backed step carries a live engine badge (Vultr / local fallback / local) in the default trace view — not hidden behind a debug flag. This run shows a real mix: some Vultr calls succeeded, one fell back, honestly.*
+**See it without running it:** [`WALKTHROUGH.md`](WALKTHROUGH.md) has a screenshot of every phase above, in sequence, from the same run — including the 5/6 → Critic catch → Redirect → 6/6 loop and the trace panel's engine badges.
 
 ## Where to look in the code
 
