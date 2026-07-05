@@ -1,0 +1,114 @@
+---
+description: Agent Flux — sub-agent orchestration for UX proposals and Px implementation with Alex validation
+alwaysApply: true
+---
+
+# Sub-agent workflows (Agent Flux)
+
+Parent agent **orchestrates only** — does not skip gates. Four roles in implementation; three in proposal.
+
+---
+
+## Roles
+
+### Alex (validator) — `gpt-5.5-medium`
+
+Senior PM / Engagement Lead. Supervisor, not developer.
+
+**Cares about:** privacy boundary → plan approval → escalation defaults → contract validation → no dev noise (Vultr JSON, session UUID, Gemma jargon).
+
+**Verdicts:** `PASS` | `PASS WITH FIXES` | `FAIL` | `Almost` (proposal only) | `GO` (full E2E).
+
+### UX/IA strategist — `claude-sonnet-5-thinking-high`
+
+Structure, journey, show/hide per step, **P0/P1/P2 priority list** (max 8 items).
+
+### Visual designer — `claude-opus-4-8-thinking-medium`
+
+Design system, typography, palette. Iteration 4 winner: **Ledger Light** (Fraunces + IBM Plex, parchment/navy/amber/teal). On **P3**, compacts the living spec to `frontend/design.md` (tokens, recipes, anti-patterns).
+
+### Coder — `composer-2.5-fast`
+
+**Implementation sub-agent.** Launched via Task (or parent after brief is locked).
+
+**Scope rules:**
+- One **Px slice per run** — never mix P0 + P1 in the same coder task
+- P0 = structure only (stepper, layout, hide dev noise); minimal CSS
+- P1 = Ledger Light visual system on top of P0
+- P1.5 = Alex `PASS WITH FIXES` from prior Px (not in original UX plan — name it explicitly)
+- P2 = polish from original plan (time cues, toasts, etc.)
+- **P3 = design system consistency** — optional post-P2 stage; **no IA/layout changes**. Unify tokens (radius, shadow, text scale), pills, alerts, heading/button discipline; kill "vibe coded" drift. Visual compacts spec to `frontend/design.md`. Split **P3a** (Alex-insisted, demo ROI) vs **P3b** (deferred: export placement, done consolidation, motion/a11y tokens).
+- **P3.5** = micro-fixes from Alex or user **during/after P3** (e.g. remove left accent bars) — same naming rule as P1.5; not mixed into P3b scope.
+- Match existing conventions; run `pnpm test` before handoff
+- **Does not** self-approve — always hands off to Alex
+
+---
+
+## Phase A — Proposal (before coding)
+
+Run UX + Visual **in parallel** → parent synthesizes → **Alex reviews** (Approve / Modify / Reject + one sentence).
+
+- **P0–P2:** Alex reviews each priority item → **Almost → Go** before coder.
+- **P3 (optional):** Alex verdict **POLISH** (scoped P3a) vs **SHIP AS-IS** — no coder until user or Alex approves scope.
+
+If Alex **Modify/Reject** items → update brief → Alex re-reviews affected items only.
+
+**Gate:** No coder until Alex **Almost → Go** (P0–P2) or **POLISH** scope locked (P3).
+
+---
+
+## Phase B — Implementation loop (per Px)
+
+```
+Coder (Composer, Px only) → Alex + Playwright E2E → verdict → [fix loop] → next Px
+```
+
+| Step | Who | Action |
+|------|-----|--------|
+| 1 | Coder | Implement **one** Px; tests green |
+| 2 | Alex | Full or partial Flux Cycle via **Playwright MCP** |
+| 3 | Parent | Read Alex verdict and act (see below) |
+
+### When Alex is happy
+
+| Verdict | Next step |
+|---------|-----------|
+| `PASS` or `GO` | Advance to **next Px** (P0 → P1 → P1.5 → P2 → **P3** → ship) |
+| `Almost` (proposal) | Lock brief, then start P0 coder |
+
+### When Alex is **not** happy — fix loop
+
+| Verdict | What happens | Do **not** |
+|---------|--------------|------------|
+| `PASS WITH FIXES` | Coder (or parent if ≤2 small fixes) applies **Alex's top 1–2 items** → Alex re-tests **affected steps only** → repeat until `PASS` | Start next Px while fixes open |
+| `FAIL` | Stop feature work; coder re-does current Px or parent escalates to user | Patch forward into next Px |
+| `Almost` (mid-impl.) | Treat as `PASS WITH FIXES` — same loop | Ship to demo |
+
+**Iteration 4 examples (PASS WITH FIXES → P1.5):**
+- P0: Hartwell still visible in masked text → regex safety net → re-test boundary
+- P0: mapping table expanded → collapse by default → re-test boundary
+- P1: PRD dump too noisy, warn banner after Accept → collapsed PRD + post-Accept UI (labeled **P1.5**)
+
+**Naming:** fixes Alex or user requests **after** a Px validated but **before** the next planned Px = **P1.5**, **P2.5**, **P3.5**, etc. — not mixed into the next priority.
+
+**Iteration 4 P3 examples:**
+- P3a: design tokens, unified pills/alerts, editorial headings (no step numbers), Escalation h2, Accept last in Validate; `frontend/design.md` written by Visual
+- P3.5: remove colored left accent bars on checkpoint panels (vibe-code tell); uniform panel borders per `design.md`
+
+### Alex Playwright checklist (full E2E)
+
+1. Upload — stepper, pills, full contract, no Vultr/trace  
+2. Boundary — masked vs original, `~15s`, mapping collapsed, no leaks, toast  
+3. Plan — editable steps, `~15s`, contract chip, toast  
+4. Running — trace expanded  
+5. Escalation — evidence, default 1-click, `~15s`  
+6. Validate — **Contract vs delivery** (merged), PRD collapsed, warn only pre-Accept  
+7. Done — verdict chip, export, no stale warn, toast  
+
+**Backend:** uvicorn **without** `--reload` during E2E (reload → "Invalid plan resume token").
+
+---
+
+## When to invoke
+
+UX iterations, demo polish, supervisor checkpoint UI. Skip for backend-only changes unless supervisor UI is affected.

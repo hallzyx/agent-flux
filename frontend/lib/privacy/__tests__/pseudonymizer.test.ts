@@ -18,6 +18,11 @@ describe("PseudonymizerPort round-trip (M2 gate)", () => {
     }
   });
 
+  it("masks residual LLP org names (Hartwell safety net)", () => {
+    const { maskedText } = pseudonymizer.pseudonymize(GOLDEN_BRIEF);
+    expect(maskedText).not.toContain("Hartwell & Partners LLP");
+  });
+
   it("uses typed placeholders with magnitude for budget", () => {
     const { maskedText } = pseudonymizer.pseudonymize(GOLDEN_BRIEF);
     expect(maskedText).toMatch(/\[BUDGET_\d+: ~low-6-figures USD\]/);

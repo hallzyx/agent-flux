@@ -40,7 +40,25 @@
 | I2c | **`score_risks_llm` + `estimate_effort_llm`**: `backend/app/tools/llm_tools.py`, prompting reforzado (role, schema, hard rules, few-shot, contrato) | M5 | Trace muestra `engine: vultr`, `prompt_version`, `reinforcement`. 18 tests backend passing | ✅ |
 | I2d | **`extract_requirements_llm`**: enriquecimiento opcional post-baseline regex | M4 | Trace event `extract_requirements_llm` cuando el LLM añade reqs | ✅ |
 
-### Archivos clave (iteración 2)
+## Post-MVP — Iteración 3 (supervisión completa)
+
+| # | Entregable | Depende de | Gate de validación | Estado |
+|---|---|---|---|---|
+| I3a | **Plan approval checkpoint**: pausa post-Plan, `POST /api/cycle/approve-plan` | I2 | Sin approve → cero `tool_call` en Network; tras approve → execute | ✅ |
+| I3b | **Completion report**: diff cláusula × cláusula vs contrato en Critic | M8 | Golden fixture muestra ≥1 cláusula `unmet` (deadline Q1 2027); sin auto-fix | ✅ |
+| I3c | **Verdict Reject**: vuelve a upload, no replan | M9 | Reject no relanza ciclo | ✅ |
+| I3d | **Precedente en Plan**: inyectado en prompt + trace | M7 | 2ª corrida: status + `precedents_in_plan` en evento plan | ✅ |
+
+### Archivos clave (iteración 3)
+
+```
+backend/app/cycle/completion_report.py   — Slippage Protocol completion report
+backend/app/cycle/orchestrator.py        — plan pause/resume, _execute_from_plan
+backend/app/main.py                      — /api/cycle/approve-plan
+frontend/components/PlanApprovalCard.tsx
+frontend/components/CompletionReportPanel.tsx
+frontend/components/ValidationPanel.tsx  — Reject + completion table
+```
 
 ```
 backend/app/tools/llm_tools.py       — prompts reforzados + score/estimate LLM

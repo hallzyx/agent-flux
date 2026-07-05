@@ -14,7 +14,12 @@ export function EscalationCard({ payload, onAcceptDefault, onSelectOption }: Esc
 
   return (
     <div className="escalation-card">
-      <h3>Escalation — decision required</h3>
+      <div className="checkpoint-header">
+        <h2>Escalation — decision required</h2>
+        <span className="checkpoint-time-cue" title="Typical supervisor review time">
+          ~15s
+        </span>
+      </div>
       <p><strong>Blocked:</strong> {payload.blocked_decision}</p>
       <div className="evidence">
         <strong>Evidence from brief:</strong>

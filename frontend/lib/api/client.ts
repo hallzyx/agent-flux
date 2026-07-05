@@ -114,10 +114,54 @@ export function resumeCycle(
   return () => controller.abort();
 }
 
+export function approvePlan(
+  body: { session_id: string; resume_token: string; approved_steps?: string[] },
+  onEvent: (event: TraceEvent) => void,
+  onDone: () => void,
+  onError: (err: Error) => void,
+): () => void {
+  const controller = new AbortController();
+
+  (async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/cycle/approve-plan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      if (!res.ok || !res.body) throw new Error(await res.text());
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop() || "";
+        for (const part of parts) {
+          const line = part.trim();
+          if (line.startsWith("data: ")) {
+            onEvent(JSON.parse(line.slice(6)) as TraceEvent);
+          }
+        }
+      }
+      onDone();
+    } catch (err) {
+      if ((err as Error).name !== "AbortError") onError(err as Error);
+    }
+  })();
+
+  return () => controller.abort();
+}
+
 export async function submitVerdict(body: {
   session_id: string;
   cycle_id: string;
-  verdict: "accept" | "redirect";
+  verdict: "accept" | "redirect" | "reject";
   note?: string;
 }) {
   const res = await fetch(`${API_URL}/api/verdict`, {

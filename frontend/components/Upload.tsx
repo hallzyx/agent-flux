@@ -19,7 +19,7 @@ export function Upload({ onTextExtracted, onLoadFixture, disabled }: UploadProps
 
   return (
     <div className="upload">
-      <h2>1. Upload client brief</h2>
+      <h2>Upload client RFP</h2>
       <p className="hint">PDF or text — processed locally. Nothing leaves your device until you approve.</p>
       <div className="upload-actions">
         <button type="button" disabled={disabled} onClick={() => inputRef.current?.click()}>
@@ -27,7 +27,7 @@ export function Upload({ onTextExtracted, onLoadFixture, disabled }: UploadProps
         </button>
         {onLoadFixture && (
           <button type="button" className="secondary" disabled={disabled} onClick={onLoadFixture}>
-            Load demo brief
+            Load demo brief (Finance)
           </button>
         )}
       </div>

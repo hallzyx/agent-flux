@@ -18,11 +18,24 @@ const TYPE_LABELS: Record<string, string> = {
 interface TracePanelProps {
   events: TraceEvent[];
   running: boolean;
+  mode?: "rail" | "expanded";
 }
 
-export function TracePanel({ events, running }: TracePanelProps) {
+export function TracePanel({ events, running, mode = "expanded" }: TracePanelProps) {
+  if (mode === "rail") {
+    return (
+      <aside className="trace-panel trace-panel-rail" aria-label="Flux Cycle trace">
+        <span className="trace-rail-label">Trace</span>
+        <span className="trace-rail-badge" aria-label={`${events.length} events`}>
+          {events.length}
+        </span>
+        {running && <span className="trace-rail-live" aria-hidden title="Live" />}
+      </aside>
+    );
+  }
+
   return (
-    <div className="trace-panel">
+    <div className="trace-panel trace-panel-expanded">
       <h2>Flux Cycle Trace</h2>
       {running && <p className="trace-live">● Live</p>}
       <div className="trace-list">
@@ -35,13 +48,26 @@ export function TracePanel({ events, running }: TracePanelProps) {
             </div>
             <p className="trace-message">{ev.message}</p>
             {ev.type === "plan" && Array.isArray(ev.data.steps) && (
-              <ol>{(ev.data.steps as string[]).map((s, i) => <li key={i}>{s}</li>)}</ol>
+              <>
+                {ev.data.pending_approval ? (
+                  <p className="plan-pending">Awaiting supervisor approval</p>
+                ) : null}
+                <ol>{(ev.data.steps as string[]).map((s, i) => <li key={i}>{s}</li>)}</ol>
+              </>
             )}
             {ev.type === "retrieval" && (
               <blockquote>{String(ev.data.excerpt || "").slice(0, 200)}…</blockquote>
             )}
             {ev.type === "tool_call" && (
               <code>{String(ev.data.tool)}</code>
+            )}
+            {ev.type === "critic" && ev.data.completion_report && (
+              <p className="completion-summary">
+                {(() => {
+                  const s = (ev.data.completion_report as { summary: { met: number; total: number } }).summary;
+                  return `Completion: ${s.met}/${s.total} clauses met`;
+                })()}
+              </p>
             )}
             {ev.type === "critic" && Array.isArray(ev.data.findings) && (
               <ul>{(ev.data.findings as string[]).map((f, i) => <li key={i}>{f}</li>)}</ul>

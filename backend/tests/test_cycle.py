@@ -2,7 +2,7 @@
 
 import pytest
 
-from app.cycle.orchestrator import _filter_critic_findings
+from app.cycle.orchestrator import _correct_planted_deadline, _filter_critic_findings
 from app.tools import deterministic as tools
 
 
@@ -30,6 +30,33 @@ def test_planted_error_detection():
     finding = tools.detect_planted_error(prd)
     assert finding is not None
     assert "Q1 2027" in finding
+
+
+def test_correct_planted_deadline_before_validation():
+    prd = {
+        "epics": [
+            {
+                "id": "EPIC-02",
+                "title": "Phase 2 — Licensing",
+                "stories": [
+                    {
+                        "title": "Delivery — deadline Q1 2027 PLANTED_ERROR",
+                        "size": "L",
+                        "criteria": ["Deliver by Q1 2027", "x"],
+                    }
+                ],
+            }
+        ],
+        "stories": [
+            {"title": "Delivery — deadline Q1 2027 PLANTED_ERROR", "size": "L", "criteria": ["Deliver by Q1 2027"]}
+        ],
+    }
+    fixed = _correct_planted_deadline(prd)
+    blob = str(fixed)
+    assert "Q1 2027" not in blob
+    assert "PLANTED_ERROR" not in blob
+    assert "Q3 2026" in blob
+    assert tools.detect_planted_error(fixed) is None
 
 
 def test_filter_critic_drops_payment_false_positive_when_resolved():
