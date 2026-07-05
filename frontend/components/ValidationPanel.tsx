@@ -31,7 +31,7 @@ export function ValidationPanel({
   const [prdOpen, setPrdOpen] = useState(false);
 
   const report = prd.completion_report as CompletionReport | undefined;
-  const hasUnmet = report?.summary.unmet && report.summary.unmet > 0;
+  const hasUnmet = (report?.summary.unmet ?? 0) > 0;
 
   return (
     <div className="validation-panel">

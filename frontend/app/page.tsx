@@ -23,6 +23,7 @@ import {
 import { GOLDEN_BRIEF, GOLDEN_ENTITIES, GOLDEN_GEMMA_ONLY_ENTITIES, DEMO_VERTICAL, DEMO_VERTICAL_TAGLINE } from "@/lib/fixtures/goldenBrief";
 import { createPseudonymizer, setPseudonymizer } from "@/lib/privacy/regexPseudonymizer";
 import { buildReidentifiedExport } from "@/lib/privacy/reidentifyExport";
+import { downloadTextFile } from "@/lib/downloadFile";
 import { GemmaPseudonymizer, isGemmaPseudonymizer, tryEnableGemma } from "@/lib/privacy/gemmaPseudonymizer";
 import type { MappingEntry } from "@/lib/privacy/types";
 import type { EscalationPayload, PrdDraft, TraceEvent } from "@/lib/trace/events";
@@ -401,20 +402,10 @@ export default function HomePage() {
     const exported = buildReidentifiedExport(prd, pseudonymizer, mapping);
     if (!exported) return;
     setReidentifiedMd(exported.markdown);
-    const blob = new Blob([exported.markdown], { type: "text/markdown" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "prd.md";
-    a.click();
-    URL.revokeObjectURL(url);
-    const jsonBlob = new Blob([JSON.stringify(exported.jira, null, 2)], { type: "application/json" });
-    const jsonUrl = URL.createObjectURL(jsonBlob);
-    const a2 = document.createElement("a");
-    a2.href = jsonUrl;
-    a2.download = "prd-jira.json";
-    a2.click();
-    URL.revokeObjectURL(jsonUrl);
+    downloadTextFile(exported.markdown, "prd.md", "text/markdown");
+    window.setTimeout(() => {
+      downloadTextFile(JSON.stringify(exported.jira, null, 2), "prd-jira.json", "application/json");
+    }, 400);
   };
 
   return (
