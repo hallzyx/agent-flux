@@ -127,6 +127,8 @@ cd backend && uv run pytest
 
 **Document-grounded enterprise agent** for regulated **Finance / lending** workflows: a confidential client RFP is ingested, the agent plans, retrieves the document multiple times, calls tools, escalates ambiguous fee-structure decisions, and produces an execution-ready delivery spec with full SSE trace.
 
+**Powered by NVIDIA models on Vultr Serverless Inference** — the Executor runs `nvidia/Nemotron-Cascade-2-30B-A3B` and the Critic runs a separate, independently configured `nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-BF16` (deliberate critic diversity: a different model reviewing the Executor's own output). See [`backend/.env.example`](backend/.env.example) and [`backend/app/config.py`](backend/app/config.py#L9-L10) for the exact model IDs, and the trace panel badges (screenshot above) for live confirmation of which calls actually ran on them.
+
 | Vultr Finance example pattern | Agent Flux |
 |-------------------------------|------------|
 | Ingest credit agreement / filings | Client RFP brief (Meridian Capital lending portal) |
@@ -143,6 +145,7 @@ Demo fixture: **Load demo brief (Finance)** — same mechanical gates (payment a
 - **Vultr** — Primary submission: Finance document-grounded enterprise agent (plan, multi-retrieval, tools, escalation)
 - **Cursor** — Interactive supervision checkpoints (boundary, plan, escalation, validate)
 - **DeepMind** — Privacy boundary with on-device pseudonymization (Gemma when available)
+- **NVIDIA bonus prize** — both the Executor and Critic run NVIDIA models (`Nemotron-Cascade-2-30B-A3B`, `Nemotron-3-Nano-Omni-30B-A3B-Reasoning-BF16`) served via Vultr Serverless Inference
 
 ## License
 
