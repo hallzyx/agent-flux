@@ -77,7 +77,7 @@ Run the demo brief **twice** in the same session (via "Run again") to see **prec
 | Vultr client, `enable_thinking` handling | [`backend/app/llm/vultr.py`](backend/app/llm/vultr.py) |
 | Clause-by-clause completion report (Slippage Protocol) | [`backend/app/cycle/completion_report.py`](backend/app/cycle/completion_report.py) |
 | Deterministic fallbacks + golden-fixture helpers | [`backend/app/tools/deterministic.py`](backend/app/tools/deterministic.py) |
-| On-device pseudonymization (Gemma + regex fallback) | [`frontend/lib/privacy/`](frontend/lib/privacy/) |
+| On-device pseudonymization (Gemma 3 270M + regex fallback) | [`frontend/lib/privacy/`](frontend/lib/privacy/) |
 | Trace panel + Vultr engine badges | [`frontend/components/TracePanel.tsx`](frontend/components/TracePanel.tsx) |
 | Main supervisor UI flow | [`frontend/app/page.tsx`](frontend/app/page.tsx) |
 
@@ -87,7 +87,7 @@ Run the demo brief **twice** in the same session (via "Run again") to see **prec
 Browser (Next.js)                    FastAPI + Vultr
 ─────────────────                    ────────────────
 PDF extract (local)                  
-PseudonymizerPort (regex / Gemma)    
+PseudonymizerPort (regex / Gemma 3)  
 Boundary review ──masked text only──▶ Flux Cycle (SSE trace)
 Re-identify PRD ◀──PRD placeholders─┘
 ```
@@ -113,7 +113,7 @@ cd backend && uv run pytest
 ## Known issues
 
 - **A trace step shows "local fallback" instead of "Vultr" — is that a broken integration?** No. Vultr's reasoning-heavy models occasionally spend their whole token budget on internal chain-of-thought before writing a final answer, and hit the completion limit before ever emitting the JSON response. When that happens, the tool call falls back to a deterministic implementation and the trace badge says so honestly — it's a transparency feature, not a hidden failure. See `backend/app/llm/vultr.py` and the "Post-iteration-3 hardening" section of [`docs/build_order.md`](docs/build_order.md) for the investigation (including the `enable_thinking` parameter that fixes most occurrences).
-- Gemma on-device (M10): when loaded, **Gemma leads NER** on the brief; regex applies structured patterns (email, budget, date) as safety net. Falls back to full regex without WebGPU/model
+- Gemma 3 (270M, quantized, via MediaPipe) on-device (M10): when loaded, **Gemma leads NER** on the brief; regex applies structured patterns (email, budget, date) as safety net. Falls back to full regex without WebGPU/model
 - Executor tools (`score_risks_llm`, `estimate_effort_llm`) use Vultr with reinforcement prompting; fall back to deterministic tools without API key
 - In-memory session store (no persistence across server restarts)
 
@@ -137,9 +137,10 @@ Demo fixture: **Load demo brief (Finance)** — same mechanical gates (payment a
 ## Hackathon tracks (reference)
 
 - **Vultr** — Primary submission: Finance document-grounded enterprise agent (plan, multi-retrieval, tools, escalation)
-- **Cursor** — Interactive supervision checkpoints (boundary, plan, escalation, validate)
-- **DeepMind** — Privacy boundary with on-device pseudonymization (Gemma when available)
-- **NVIDIA bonus prize** — both the Executor and Critic run NVIDIA models (`Nemotron-Cascade-2-30B-A3B`, `Nemotron-3-Nano-Omni-30B-A3B-Reasoning-BF16`) served via Vultr Serverless Inference
+- **NVIDIA bonus prize** — both LLM roles run NVIDIA models via Vultr Serverless Inference:
+  - **Executor** (plan generation, requirement enrichment, risk scoring, effort estimation) → `nvidia/Nemotron-Cascade-2-30B-A3B`
+  - **Critic** (PRD review against the acceptance contract) → `nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-BF16`
+  - Config: [`backend/.env.example`](backend/.env.example), [`backend/app/config.py`](backend/app/config.py#L9-L10) — live confirmation per call: the trace panel's engine badges (see [`WALKTHROUGH.md`](WALKTHROUGH.md), phase 8)
 
 ## License
 
